@@ -1,21 +1,17 @@
 mod alu;
 mod register;
-mod registers2;
-use register::Register;
+//use register::Register;
 
-use crate::memory::Memory;
-
-use self::{
-    alu::Alu,
-    register::{RegLable, RegSize, SizedArg},
+use crate::{
+    cpu::register::{RegByte, RegWord},
+    memory::Memory,
 };
+
+use self::{alu::Alu, register::Registers};
 
 pub struct Cpu {
     alu: Alu,
-    pub af: Register,
-    pub bc: Register,
-    pub de: Register,
-    pub hl: Register,
+    regs: Registers,
     pub sp: u16,
     pub pc: u16,
 
@@ -27,10 +23,7 @@ impl Default for Cpu {
     fn default() -> Self {
         Self {
             alu: Alu::default(),
-            af: Register::new(0x0100),
-            bc: Register::new(0x0000),
-            de: Register::new(0x0000),
-            hl: Register::new(0x0000),
+            regs: Registers::new(),
             sp: 0xFFFE,
             pc: 0x0100,
 
@@ -53,226 +46,226 @@ impl Cpu {
             let opcode = self.fetch_byte(memory);
 
             match opcode {
-                0x19 => self.opcode_rr(RegLable::C),
-                0x1A => self.opcode_rr(RegLable::D),
-                0x1B => self.opcode_rr(RegLable::E),
-                0x37 => self.opcode_swap_register(RegLable::A),
-                0x38 => self.opcode_srl_register(RegLable::B),
+                0x19 => self.opcode_rr(RegByte::C),
+                0x1A => self.opcode_rr(RegByte::D),
+                0x1B => self.opcode_rr(RegByte::E),
+                0x37 => self.opcode_swap_register(RegByte::A),
+                0x38 => self.opcode_srl_register(RegByte::B),
                 _ => panic!("Error Unknown opcode {:X} with prefix", opcode),
             }
         } else {
             match opcode {
                 0x00 => self.opcode_nop(),
-                0x01 => self.opcode_ld_value_to_register(memory, RegLable::Bc),
-                0x02 => self.opcode_ld_register_to_memory(memory, RegLable::Bc, RegLable::A),
-                0x03 => self.opcode_inc(RegLable::Bc),
-                0x04 => self.opcode_inc(RegLable::B),
-                0x05 => self.opcode_dec(RegLable::B),
-                0x06 => self.opcode_ld_value_to_register(memory, RegLable::B),
-                0x07 => self.opcode_rlca(RegLable::A),
+                0x01 => self.opcode_ld_word_to_register(memory, RegWord::Bc),
+                0x02 => self.opcode_ld_register_to_memory(memory, RegWord::Bc, RegByte::A),
+                0x03 => self.opcode_inc16(RegWord::Bc),
+                0x04 => self.opcode_inc8(RegByte::B),
+                0x05 => self.opcode_dec8(RegByte::B),
+                0x06 => self.opcode_ld_byte_to_register(memory, RegByte::B),
+                0x07 => self.opcode_rlca(RegByte::A),
                 0x08 => self.opcode_ld_sp_to_address(memory),
-                0x09 => self.opcode_add(RegLable::Hl, RegLable::Bc),
+                0x09 => self.opcode_add_register_word(RegWord::Hl, RegWord::Bc),
                 0x10 => self.opcode_stop(),
-                0x0A => self.opcode_ld_memory_to_register(memory, RegLable::A, RegLable::Bc),
-                0x0B => self.opcode_dec(RegLable::Bc),
-                0x0C => self.opcode_inc(RegLable::C),
-                0x0D => self.opcode_dec(RegLable::C),
-                0x0E => self.opcode_ld_value_to_register(memory, RegLable::C),
-                0x11 => self.opcode_ld_value_to_register(memory, RegLable::De),
-                0x12 => self.opcode_ld_register_to_memory(memory, RegLable::De, RegLable::A),
-                0x13 => self.opcode_inc(RegLable::De),
-                0x14 => self.opcode_inc(RegLable::D),
-                0x15 => self.opcode_dec(RegLable::D),
-                0x19 => self.opcode_add(RegLable::Hl, RegLable::De),
+                0x0A => self.opcode_ld_memory_to_register(memory, RegByte::A, RegWord::Bc),
+                0x0B => self.opcode_dec16(RegWord::Bc),
+                0x0C => self.opcode_inc8(RegByte::C),
+                0x0D => self.opcode_dec8(RegByte::C),
+                0x0E => self.opcode_ld_byte_to_register(memory, RegByte::C),
+                0x11 => self.opcode_ld_word_to_register(memory, RegWord::De),
+                0x12 => self.opcode_ld_register_to_memory(memory, RegWord::De, RegByte::A),
+                0x13 => self.opcode_inc16(RegWord::De),
+                0x14 => self.opcode_inc8(RegByte::D),
+                0x15 => self.opcode_dec8(RegByte::D),
+                0x19 => self.opcode_add_register_word(RegWord::Hl, RegWord::De),
                 0x18 => self.opcode_jr(memory),
-                0x16 => self.opcode_ld_value_to_register(memory, RegLable::D),
-                0x1A => self.opcode_ld_memory_to_register(memory, RegLable::A, RegLable::De),
-                0x1B => self.opcode_dec(RegLable::De),
-                0x1C => self.opcode_inc(RegLable::E),
-                0x1D => self.opcode_dec(RegLable::E),
-                0x1E => self.opcode_ld_value_to_register(memory, RegLable::E),
-                0x1F => self.opcode_rr(RegLable::A),
+                0x16 => self.opcode_ld_byte_to_register(memory, RegByte::D),
+                0x1A => self.opcode_ld_memory_to_register(memory, RegByte::A, RegWord::De),
+                0x1B => self.opcode_dec16(RegWord::De),
+                0x1C => self.opcode_inc8(RegByte::E),
+                0x1D => self.opcode_dec8(RegByte::E),
+                0x1E => self.opcode_ld_byte_to_register(memory, RegByte::E),
+                0x1F => self.opcode_rr(RegByte::A),
                 0x20 => self.opcode_jr_nz(memory),
-                0x21 => self.opcode_ld_value_to_register(memory, RegLable::Hl),
-                0x22 => self.opcode_ldi_register_to_memory(memory, RegLable::Hl, RegLable::A),
-                0x23 => self.opcode_inc(RegLable::Hl),
-                0x24 => self.opcode_inc(RegLable::H),
-                0x25 => self.opcode_dec(RegLable::H),
-                0x26 => self.opcode_ld_value_to_register(memory, RegLable::H),
+                0x21 => self.opcode_ld_word_to_register(memory, RegWord::Hl),
+                0x22 => self.opcode_ldi_register_to_memory(memory, RegWord::Hl, RegByte::A),
+                0x23 => self.opcode_inc16(RegWord::Hl),
+                0x24 => self.opcode_inc8(RegByte::H),
+                0x25 => self.opcode_dec8(RegByte::H),
+                0x26 => self.opcode_ld_byte_to_register(memory, RegByte::H),
                 0x28 => self.opcode_jr_z(memory),
-                0x29 => self.opcode_add(RegLable::Hl, RegLable::Hl),
-                0x2A => self.opcode_ldi_memory_to_register(memory, RegLable::A, RegLable::Hl),
-                0x2B => self.opcode_dec(RegLable::Hl),
-                0x2C => self.opcode_inc(RegLable::L),
-                0x2D => self.opcode_dec(RegLable::L),
-                0x2E => self.opcode_ld_value_to_register(memory, RegLable::L),
+                0x29 => self.opcode_add_register_word(RegWord::Hl, RegWord::Hl),
+                0x2A => self.opcode_ldi_memory_to_register(memory, RegByte::A, RegWord::Hl),
+                0x2B => self.opcode_dec16(RegWord::Hl),
+                0x2C => self.opcode_inc8(RegByte::L),
+                0x2D => self.opcode_dec8(RegByte::L),
+                0x2E => self.opcode_ld_byte_to_register(memory, RegByte::L),
                 0x30 => self.opcode_jr_nc(memory),
                 0x31 => self.opcode_ld_memory_to_stackptr(memory),
-                0x32 => self.opcode_ldd_register_to_memory(memory, RegLable::Hl, RegLable::A),
+                0x32 => self.opcode_ldd_register_to_memory(memory, RegWord::Hl, RegByte::A),
                 0x33 => self.opcode_inc_sp(),
-                0x35 => self.opcode_dec_memory(memory, RegLable::Hl),
-                0x36 => self.opcode_ld_byte_to_memory(memory, RegLable::Hl),
+                0x35 => self.opcode_dec_memory(memory, RegWord::Hl),
+                0x36 => self.opcode_ld_byte_to_memory(memory, RegWord::Hl),
                 0x38 => self.opcode_jr_c(memory),
-                0x3A => self.opcode_ldd_memory_to_register(memory, RegLable::A, RegLable::Hl),
-                0x3E => self.opcode_ld_value_to_register(memory, RegLable::A),
-                0x3C => self.opcode_inc(RegLable::A),
-                0x3D => self.opcode_dec(RegLable::A),
-                0x40 => self.opcode_ld_register_to_register(RegLable::B, RegLable::B),
-                0x41 => self.opcode_ld_register_to_register(RegLable::B, RegLable::C),
-                0x42 => self.opcode_ld_register_to_register(RegLable::B, RegLable::D),
-                0x43 => self.opcode_ld_register_to_register(RegLable::B, RegLable::E),
-                0x44 => self.opcode_ld_register_to_register(RegLable::B, RegLable::H),
-                0x45 => self.opcode_ld_register_to_register(RegLable::B, RegLable::L),
-                0x46 => self.opcode_ld_memory_to_register(memory, RegLable::B, RegLable::Hl),
-                0x47 => self.opcode_ld_register_to_register(RegLable::B, RegLable::A),
-                0x48 => self.opcode_ld_register_to_register(RegLable::C, RegLable::B),
-                0x49 => self.opcode_ld_register_to_register(RegLable::C, RegLable::C),
-                0x4A => self.opcode_ld_register_to_register(RegLable::C, RegLable::D),
-                0x4B => self.opcode_ld_register_to_register(RegLable::C, RegLable::E),
-                0x4C => self.opcode_ld_register_to_register(RegLable::C, RegLable::H),
-                0x4D => self.opcode_ld_register_to_register(RegLable::C, RegLable::L),
-                0x4E => self.opcode_ld_memory_to_register(memory, RegLable::C, RegLable::Hl),
-                0x4F => self.opcode_ld_register_to_register(RegLable::C, RegLable::A),
-                0x50 => self.opcode_ld_register_to_register(RegLable::D, RegLable::B),
-                0x51 => self.opcode_ld_register_to_register(RegLable::D, RegLable::C),
-                0x52 => self.opcode_ld_register_to_register(RegLable::D, RegLable::D),
-                0x53 => self.opcode_ld_register_to_register(RegLable::D, RegLable::E),
-                0x54 => self.opcode_ld_register_to_register(RegLable::D, RegLable::H),
-                0x55 => self.opcode_ld_register_to_register(RegLable::D, RegLable::L),
-                0x56 => self.opcode_ld_memory_to_register(memory, RegLable::D, RegLable::Hl),
-                0x57 => self.opcode_ld_register_to_register(RegLable::D, RegLable::A),
-                0x58 => self.opcode_ld_register_to_register(RegLable::E, RegLable::B),
-                0x59 => self.opcode_ld_register_to_register(RegLable::E, RegLable::C),
-                0x5A => self.opcode_ld_register_to_register(RegLable::E, RegLable::D),
-                0x5B => self.opcode_ld_register_to_register(RegLable::E, RegLable::E),
-                0x5C => self.opcode_ld_register_to_register(RegLable::E, RegLable::H),
-                0x5D => self.opcode_ld_register_to_register(RegLable::E, RegLable::L),
-                0x5E => self.opcode_ld_memory_to_register(memory, RegLable::E, RegLable::Hl),
-                0x5F => self.opcode_ld_register_to_register(RegLable::E, RegLable::A),
-                0x60 => self.opcode_ld_register_to_register(RegLable::H, RegLable::B),
-                0x61 => self.opcode_ld_register_to_register(RegLable::H, RegLable::C),
-                0x62 => self.opcode_ld_register_to_register(RegLable::H, RegLable::D),
-                0x63 => self.opcode_ld_register_to_register(RegLable::H, RegLable::E),
-                0x64 => self.opcode_ld_register_to_register(RegLable::H, RegLable::H),
-                0x65 => self.opcode_ld_register_to_register(RegLable::H, RegLable::L),
-                0x66 => self.opcode_ld_memory_to_register(memory, RegLable::H, RegLable::Hl),
-                0x67 => self.opcode_ld_register_to_register(RegLable::H, RegLable::A),
-                0x68 => self.opcode_ld_register_to_register(RegLable::L, RegLable::B),
-                0x69 => self.opcode_ld_register_to_register(RegLable::L, RegLable::C),
-                0x6A => self.opcode_ld_register_to_register(RegLable::L, RegLable::D),
-                0x6B => self.opcode_ld_register_to_register(RegLable::L, RegLable::E),
-                0x6C => self.opcode_ld_register_to_register(RegLable::L, RegLable::H),
-                0x6D => self.opcode_ld_register_to_register(RegLable::L, RegLable::L),
-                0x6E => self.opcode_ld_memory_to_register(memory, RegLable::L, RegLable::Hl),
-                0x6F => self.opcode_ld_register_to_register(RegLable::L, RegLable::A),
-                0x70 => self.opcode_ld_register_to_memory(memory, RegLable::Hl, RegLable::B),
-                0x71 => self.opcode_ld_register_to_memory(memory, RegLable::Hl, RegLable::C),
-                0x72 => self.opcode_ld_register_to_memory(memory, RegLable::Hl, RegLable::D),
-                0x73 => self.opcode_ld_register_to_memory(memory, RegLable::Hl, RegLable::E),
-                0x74 => self.opcode_ld_register_to_memory(memory, RegLable::Hl, RegLable::H),
-                0x75 => self.opcode_ld_register_to_memory(memory, RegLable::Hl, RegLable::L),
+                0x3A => self.opcode_ldd_memory_to_register(memory, RegByte::A, RegWord::Hl),
+                0x3E => self.opcode_ld_byte_to_register(memory, RegByte::A),
+                0x3C => self.opcode_inc8(RegByte::A),
+                0x3D => self.opcode_dec8(RegByte::A),
+                0x40 => self.opcode_ld_register_to_register(RegByte::B, RegByte::B),
+                0x41 => self.opcode_ld_register_to_register(RegByte::B, RegByte::C),
+                0x42 => self.opcode_ld_register_to_register(RegByte::B, RegByte::D),
+                0x43 => self.opcode_ld_register_to_register(RegByte::B, RegByte::E),
+                0x44 => self.opcode_ld_register_to_register(RegByte::B, RegByte::H),
+                0x45 => self.opcode_ld_register_to_register(RegByte::B, RegByte::L),
+                0x46 => self.opcode_ld_memory_to_register(memory, RegByte::B, RegWord::Hl),
+                0x47 => self.opcode_ld_register_to_register(RegByte::B, RegByte::A),
+                0x48 => self.opcode_ld_register_to_register(RegByte::C, RegByte::B),
+                0x49 => self.opcode_ld_register_to_register(RegByte::C, RegByte::C),
+                0x4A => self.opcode_ld_register_to_register(RegByte::C, RegByte::D),
+                0x4B => self.opcode_ld_register_to_register(RegByte::C, RegByte::E),
+                0x4C => self.opcode_ld_register_to_register(RegByte::C, RegByte::H),
+                0x4D => self.opcode_ld_register_to_register(RegByte::C, RegByte::L),
+                0x4E => self.opcode_ld_memory_to_register(memory, RegByte::C, RegWord::Hl),
+                0x4F => self.opcode_ld_register_to_register(RegByte::C, RegByte::A),
+                0x50 => self.opcode_ld_register_to_register(RegByte::D, RegByte::B),
+                0x51 => self.opcode_ld_register_to_register(RegByte::D, RegByte::C),
+                0x52 => self.opcode_ld_register_to_register(RegByte::D, RegByte::D),
+                0x53 => self.opcode_ld_register_to_register(RegByte::D, RegByte::E),
+                0x54 => self.opcode_ld_register_to_register(RegByte::D, RegByte::H),
+                0x55 => self.opcode_ld_register_to_register(RegByte::D, RegByte::L),
+                0x56 => self.opcode_ld_memory_to_register(memory, RegByte::D, RegWord::Hl),
+                0x57 => self.opcode_ld_register_to_register(RegByte::D, RegByte::A),
+                0x58 => self.opcode_ld_register_to_register(RegByte::E, RegByte::B),
+                0x59 => self.opcode_ld_register_to_register(RegByte::E, RegByte::C),
+                0x5A => self.opcode_ld_register_to_register(RegByte::E, RegByte::D),
+                0x5B => self.opcode_ld_register_to_register(RegByte::E, RegByte::E),
+                0x5C => self.opcode_ld_register_to_register(RegByte::E, RegByte::H),
+                0x5D => self.opcode_ld_register_to_register(RegByte::E, RegByte::L),
+                0x5E => self.opcode_ld_memory_to_register(memory, RegByte::E, RegWord::Hl),
+                0x5F => self.opcode_ld_register_to_register(RegByte::E, RegByte::A),
+                0x60 => self.opcode_ld_register_to_register(RegByte::H, RegByte::B),
+                0x61 => self.opcode_ld_register_to_register(RegByte::H, RegByte::C),
+                0x62 => self.opcode_ld_register_to_register(RegByte::H, RegByte::D),
+                0x63 => self.opcode_ld_register_to_register(RegByte::H, RegByte::E),
+                0x64 => self.opcode_ld_register_to_register(RegByte::H, RegByte::H),
+                0x65 => self.opcode_ld_register_to_register(RegByte::H, RegByte::L),
+                0x66 => self.opcode_ld_memory_to_register(memory, RegByte::H, RegWord::Hl),
+                0x67 => self.opcode_ld_register_to_register(RegByte::H, RegByte::A),
+                0x68 => self.opcode_ld_register_to_register(RegByte::L, RegByte::B),
+                0x69 => self.opcode_ld_register_to_register(RegByte::L, RegByte::C),
+                0x6A => self.opcode_ld_register_to_register(RegByte::L, RegByte::D),
+                0x6B => self.opcode_ld_register_to_register(RegByte::L, RegByte::E),
+                0x6C => self.opcode_ld_register_to_register(RegByte::L, RegByte::H),
+                0x6D => self.opcode_ld_register_to_register(RegByte::L, RegByte::L),
+                0x6E => self.opcode_ld_memory_to_register(memory, RegByte::L, RegWord::Hl),
+                0x6F => self.opcode_ld_register_to_register(RegByte::L, RegByte::A),
+                0x70 => self.opcode_ld_register_to_memory(memory, RegWord::Hl, RegByte::B),
+                0x71 => self.opcode_ld_register_to_memory(memory, RegWord::Hl, RegByte::C),
+                0x72 => self.opcode_ld_register_to_memory(memory, RegWord::Hl, RegByte::D),
+                0x73 => self.opcode_ld_register_to_memory(memory, RegWord::Hl, RegByte::E),
+                0x74 => self.opcode_ld_register_to_memory(memory, RegWord::Hl, RegByte::H),
+                0x75 => self.opcode_ld_register_to_memory(memory, RegWord::Hl, RegByte::L),
                 //TODO: 0x76 => HALT
-                0x77 => self.opcode_ld_register_to_memory(memory, RegLable::Hl, RegLable::A),
-                0x78 => self.opcode_ld_register_to_register(RegLable::A, RegLable::B),
-                0x79 => self.opcode_ld_register_to_register(RegLable::A, RegLable::C),
-                0x7A => self.opcode_ld_register_to_register(RegLable::A, RegLable::D),
-                0x7B => self.opcode_ld_register_to_register(RegLable::A, RegLable::E),
-                0x7C => self.opcode_ld_register_to_register(RegLable::A, RegLable::H),
-                0x7D => self.opcode_ld_register_to_register(RegLable::A, RegLable::L),
-                0x7E => self.opcode_ld_memory_to_register(memory, RegLable::A, RegLable::Hl),
-                0x7F => self.opcode_ld_register_to_register(RegLable::A, RegLable::A),
-                0x80 => self.opcode_add(RegLable::A, RegLable::B),
-                0x81 => self.opcode_add(RegLable::A, RegLable::C),
-                0x82 => self.opcode_add(RegLable::A, RegLable::D),
-                0x83 => self.opcode_add(RegLable::A, RegLable::E),
-                0x84 => self.opcode_add(RegLable::A, RegLable::H),
-                0x85 => self.opcode_add(RegLable::A, RegLable::L),
-                0x86 => self.opcode_add_memory(memory, RegLable::A, RegLable::Hl),
-                0x87 => self.opcode_add(RegLable::A, RegLable::A),
-                0x88 => self.opcode_adc(RegLable::A, RegLable::B),
-                0x89 => self.opcode_adc(RegLable::A, RegLable::C),
-                0x8A => self.opcode_adc(RegLable::A, RegLable::D),
-                0x8B => self.opcode_adc(RegLable::A, RegLable::E),
-                0x8C => self.opcode_adc(RegLable::A, RegLable::H),
-                0x8D => self.opcode_adc(RegLable::A, RegLable::L),
-                0x8F => self.opcode_adc(RegLable::A, RegLable::A),
-                0x90 => self.opcode_sub(RegLable::A, RegLable::B),
-                0x91 => self.opcode_sub(RegLable::A, RegLable::C),
-                0x92 => self.opcode_sub(RegLable::A, RegLable::D),
-                0x93 => self.opcode_sub(RegLable::A, RegLable::E),
-                0x94 => self.opcode_sub(RegLable::A, RegLable::H),
-                0x95 => self.opcode_sub(RegLable::A, RegLable::L),
-                0x97 => self.opcode_sub(RegLable::A, RegLable::A),
-                0x98 => self.opcode_sbc(RegLable::A, RegLable::B),
-                0x99 => self.opcode_sbc(RegLable::A, RegLable::C),
-                0x9A => self.opcode_sbc(RegLable::A, RegLable::D),
-                0x9B => self.opcode_sbc(RegLable::A, RegLable::E),
-                0x9C => self.opcode_sbc(RegLable::A, RegLable::H),
-                0x9D => self.opcode_sbc(RegLable::A, RegLable::L),
-                0x9F => self.opcode_sbc(RegLable::A, RegLable::A),
-                0xA0 => self.opcode_and(RegLable::A, RegLable::B),
-                0xA1 => self.opcode_and(RegLable::A, RegLable::C),
-                0xA2 => self.opcode_and(RegLable::A, RegLable::D),
-                0xA3 => self.opcode_and(RegLable::A, RegLable::E),
-                0xA4 => self.opcode_and(RegLable::A, RegLable::H),
-                0xA5 => self.opcode_and(RegLable::A, RegLable::L),
-                0xA7 => self.opcode_and(RegLable::A, RegLable::A),
-                0xA8 => self.opcode_xor(RegLable::A, RegLable::B),
-                0xA9 => self.opcode_xor(RegLable::A, RegLable::C),
-                0xAA => self.opcode_xor(RegLable::A, RegLable::D),
-                0xAB => self.opcode_xor(RegLable::A, RegLable::E),
-                0xAC => self.opcode_xor(RegLable::A, RegLable::H),
-                0xAD => self.opcode_xor(RegLable::A, RegLable::L),
-                0xAE => self.opcode_xor_memory(memory, RegLable::A, RegLable::Hl),
-                0xAF => self.opcode_xor(RegLable::A, RegLable::A),
-                0xB0 => self.opcode_or(RegLable::A, RegLable::B),
-                0xB1 => self.opcode_or(RegLable::A, RegLable::C),
-                0xB2 => self.opcode_or(RegLable::A, RegLable::D),
-                0xB3 => self.opcode_or(RegLable::A, RegLable::E),
-                0xB4 => self.opcode_or(RegLable::A, RegLable::H),
-                0xB5 => self.opcode_or(RegLable::A, RegLable::L),
-                0xB6 => self.opcode_or_memory(memory, RegLable::A, RegLable::Hl),
-                0xB7 => self.opcode_or(RegLable::A, RegLable::A),
-                0xB8 => self.opcode_cp(RegLable::A, RegLable::B),
-                0xB9 => self.opcode_cp(RegLable::A, RegLable::C),
-                0xBA => self.opcode_cp(RegLable::A, RegLable::D),
-                0xBB => self.opcode_cp(RegLable::A, RegLable::E),
-                0xBC => self.opcode_cp(RegLable::A, RegLable::H),
-                0xBE => self.opcode_cp_memory(memory, RegLable::A, RegLable::Hl),
-                0xBD => self.opcode_cp(RegLable::A, RegLable::L),
-                0xBF => self.opcode_cp(RegLable::A, RegLable::A),
+                0x77 => self.opcode_ld_register_to_memory(memory, RegWord::Hl, RegByte::A),
+                0x78 => self.opcode_ld_register_to_register(RegByte::A, RegByte::B),
+                0x79 => self.opcode_ld_register_to_register(RegByte::A, RegByte::C),
+                0x7A => self.opcode_ld_register_to_register(RegByte::A, RegByte::D),
+                0x7B => self.opcode_ld_register_to_register(RegByte::A, RegByte::E),
+                0x7C => self.opcode_ld_register_to_register(RegByte::A, RegByte::H),
+                0x7D => self.opcode_ld_register_to_register(RegByte::A, RegByte::L),
+                0x7E => self.opcode_ld_memory_to_register(memory, RegByte::A, RegWord::Hl),
+                0x7F => self.opcode_ld_register_to_register(RegByte::A, RegByte::A),
+                0x80 => self.opcode_add_register_byte(RegByte::A, RegByte::B),
+                0x81 => self.opcode_add_register_byte(RegByte::A, RegByte::C),
+                0x82 => self.opcode_add_register_byte(RegByte::A, RegByte::D),
+                0x83 => self.opcode_add_register_byte(RegByte::A, RegByte::E),
+                0x84 => self.opcode_add_register_byte(RegByte::A, RegByte::H),
+                0x85 => self.opcode_add_register_byte(RegByte::A, RegByte::L),
+                0x86 => self.opcode_add_memory(memory, RegByte::A, RegWord::Hl),
+                0x87 => self.opcode_add_register_byte(RegByte::A, RegByte::A),
+                0x88 => self.opcode_adc(RegByte::A, RegByte::B),
+                0x89 => self.opcode_adc(RegByte::A, RegByte::C),
+                0x8A => self.opcode_adc(RegByte::A, RegByte::D),
+                0x8B => self.opcode_adc(RegByte::A, RegByte::E),
+                0x8C => self.opcode_adc(RegByte::A, RegByte::H),
+                0x8D => self.opcode_adc(RegByte::A, RegByte::L),
+                0x8F => self.opcode_adc(RegByte::A, RegByte::A),
+                0x90 => self.opcode_sub(RegByte::A, RegByte::B),
+                0x91 => self.opcode_sub(RegByte::A, RegByte::C),
+                0x92 => self.opcode_sub(RegByte::A, RegByte::D),
+                0x93 => self.opcode_sub(RegByte::A, RegByte::E),
+                0x94 => self.opcode_sub(RegByte::A, RegByte::H),
+                0x95 => self.opcode_sub(RegByte::A, RegByte::L),
+                0x97 => self.opcode_sub(RegByte::A, RegByte::A),
+                0x98 => self.opcode_sbc(RegByte::A, RegByte::B),
+                0x99 => self.opcode_sbc(RegByte::A, RegByte::C),
+                0x9A => self.opcode_sbc(RegByte::A, RegByte::D),
+                0x9B => self.opcode_sbc(RegByte::A, RegByte::E),
+                0x9C => self.opcode_sbc(RegByte::A, RegByte::H),
+                0x9D => self.opcode_sbc(RegByte::A, RegByte::L),
+                0x9F => self.opcode_sbc(RegByte::A, RegByte::A),
+                0xA0 => self.opcode_and(RegByte::A, RegByte::B),
+                0xA1 => self.opcode_and(RegByte::A, RegByte::C),
+                0xA2 => self.opcode_and(RegByte::A, RegByte::D),
+                0xA3 => self.opcode_and(RegByte::A, RegByte::E),
+                0xA4 => self.opcode_and(RegByte::A, RegByte::H),
+                0xA5 => self.opcode_and(RegByte::A, RegByte::L),
+                0xA7 => self.opcode_and(RegByte::A, RegByte::A),
+                0xA8 => self.opcode_xor(RegByte::A, RegByte::B),
+                0xA9 => self.opcode_xor(RegByte::A, RegByte::C),
+                0xAA => self.opcode_xor(RegByte::A, RegByte::D),
+                0xAB => self.opcode_xor(RegByte::A, RegByte::E),
+                0xAC => self.opcode_xor(RegByte::A, RegByte::H),
+                0xAD => self.opcode_xor(RegByte::A, RegByte::L),
+                0xAE => self.opcode_xor_memory(memory, RegByte::A, RegWord::Hl),
+                0xAF => self.opcode_xor(RegByte::A, RegByte::A),
+                0xB0 => self.opcode_or(RegByte::A, RegByte::B),
+                0xB1 => self.opcode_or(RegByte::A, RegByte::C),
+                0xB2 => self.opcode_or(RegByte::A, RegByte::D),
+                0xB3 => self.opcode_or(RegByte::A, RegByte::E),
+                0xB4 => self.opcode_or(RegByte::A, RegByte::H),
+                0xB5 => self.opcode_or(RegByte::A, RegByte::L),
+                0xB6 => self.opcode_or_memory(memory, RegByte::A, RegWord::Hl),
+                0xB7 => self.opcode_or(RegByte::A, RegByte::A),
+                0xB8 => self.opcode_cp(RegByte::A, RegByte::B),
+                0xB9 => self.opcode_cp(RegByte::A, RegByte::C),
+                0xBA => self.opcode_cp(RegByte::A, RegByte::D),
+                0xBB => self.opcode_cp(RegByte::A, RegByte::E),
+                0xBC => self.opcode_cp(RegByte::A, RegByte::H),
+                0xBE => self.opcode_cp_memory(memory, RegByte::A, RegWord::Hl),
+                0xBD => self.opcode_cp(RegByte::A, RegByte::L),
+                0xBF => self.opcode_cp(RegByte::A, RegByte::A),
                 0xC0 => self.opcode_ret_nz(memory),
-                0xC1 => self.opcode_pop(memory, RegLable::Bc, false),
+                0xC1 => self.opcode_pop(memory, RegWord::Bc, false),
                 0xC3 => self.opcode_jp(memory),
                 0xC4 => self.opcode_call_nz(memory),
-                0xC5 => self.opcode_push(memory, RegLable::Bc),
-                0xC6 => self.opcode_add_value(memory, RegLable::A),
+                0xC5 => self.opcode_push(memory, RegWord::Bc),
+                0xC6 => self.opcode_add_byte(memory, RegByte::A),
                 0xC8 => self.opcode_ret_z(memory),
                 0xC7 => self.opcode_rst(memory, 0x0000),
                 0xC9 => self.opcode_ret(memory),
                 0xCC => self.opcode_call_z(memory),
                 0xCD => self.opcode_call(memory),
-                0xCE => self.opcode_adc_byte(memory, RegLable::A),
+                0xCE => self.opcode_adc_byte(memory, RegByte::A),
                 0xD0 => self.opcode_ret_nc(memory),
-                0xD1 => self.opcode_pop(memory, RegLable::De, false),
-                0xD5 => self.opcode_push(memory, RegLable::De),
-                0xD6 => self.opcode_sub_byte(memory, RegLable::A),
+                0xD1 => self.opcode_pop(memory, RegWord::De, false),
+                0xD5 => self.opcode_push(memory, RegWord::De),
+                0xD6 => self.opcode_sub_byte(memory, RegByte::A),
                 0xD8 => self.opcode_ret_c(memory),
                 0xDC => self.opcode_call_c(memory),
-                0xE0 => self.opcode_ldh_register_to_address(memory, RegLable::A),
-                0xE1 => self.opcode_pop(memory, RegLable::Hl, false),
-                0xE5 => self.opcode_push(memory, RegLable::Hl),
-                0xE6 => self.opcode_and_byte(memory, RegLable::A),
-                0xE9 => self.opcode_jp_hl(RegLable::Hl),
-                0xEA => self.opcode_ld_register_to_address(memory, RegLable::A),
-                0xEE => self.opcode_xor_byte(memory, RegLable::A),
-                0xF0 => self.opcode_ldh_address_to_register(memory, RegLable::A),
-                0xF1 => self.opcode_pop(memory, RegLable::Af, true),
+                0xE0 => self.opcode_ldh_register_to_address(memory, RegByte::A),
+                0xE1 => self.opcode_pop(memory, RegWord::Hl, false),
+                0xE5 => self.opcode_push(memory, RegWord::Hl),
+                0xE6 => self.opcode_and_byte(memory, RegByte::A),
+                0xE9 => self.opcode_jp_hl(RegWord::Hl),
+                0xEA => self.opcode_ld_register_to_address(memory, RegByte::A),
+                0xEE => self.opcode_xor_byte(memory, RegByte::A),
+                0xF0 => self.opcode_ldh_address_to_register(memory, RegByte::A),
+                0xF1 => self.opcode_pop(memory, RegWord::Af, true),
                 0xF3 => self.opcode_di(),
-                0xF5 => self.opcode_push(memory, RegLable::Af),
-                0xF9 => self.opcode_ld_reg_to_stackptr(RegLable::Hl),
-                0xFA => self.opcode_ld_address_to_register(memory, RegLable::A),
-                0xFE => self.opcode_cp_byte(memory, RegLable::A),
+                0xF5 => self.opcode_push(memory, RegWord::Af),
+                0xF9 => self.opcode_ld_reg_to_stackptr(RegWord::Hl),
+                0xFA => self.opcode_ld_address_to_register(memory, RegByte::A),
+                0xFE => self.opcode_cp_byte(memory, RegByte::A),
                 0xFF => self.opcode_rst(memory, 0x0038),
                 _ => panic!("Please implement the opcode {:X}", opcode),
             }
@@ -308,620 +301,396 @@ impl Cpu {
     fn opcode_inc_sp(&mut self) {
         self.sp = self.sp.overflowing_add(1).0;
     }
-    fn opcode_ld_reg_to_stackptr(&mut self, src: RegLable) {
-        let value = src
-            .lable_to_register_readable(self)
-            .read_from_register(&src)
-            .into();
-
+    fn opcode_ld_reg_to_stackptr(&mut self, src: RegWord) {
+        let value = self.regs.read_value16_from(src);
         self.sp = value;
     }
 
-    fn opcode_rlca(&mut self, dest: RegLable) {
-        let a = dest
-            .lable_to_register_readable(self)
-            .read_from_register(&dest)
-            .into();
+    fn opcode_rlca(&mut self, dest: RegByte) {
+        let a = self.regs.read_value8_from(dest);
 
-        let (result, flags) = self.alu.rotate_left_8(a);
+        let result = self.alu.rotate_left_8(a);
+        let flags = self.alu.flags();
 
-        dest.lable_to_register_writeable(self)
-            .write_to_register(&dest, SizedArg::Size8(result));
-
-        RegLable::Af
-            .lable_to_register_writeable(self)
-            .write_to_register(&RegLable::F, SizedArg::Size8(flags));
+        self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
-    fn opcode_cp(&mut self, dest: RegLable, src: RegLable) {
-        let a = dest
-            .lable_to_register_readable(self)
-            .read_from_register(&dest)
-            .into();
-        let b = src
-            .lable_to_register_readable(self)
-            .read_from_register(&src)
-            .into();
+    fn opcode_cp(&mut self, dest: RegByte, src: RegByte) {
+        let a = self.regs.read_value8_from(dest);
+        let b = self.regs.read_value8_from(src);
 
         let flags = self.alu.cp_8(a, b);
 
-        RegLable::Af
-            .lable_to_register_writeable(self)
-            .write_to_register(&RegLable::F, SizedArg::Size8(flags));
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
-    fn opcode_cp_memory(&mut self, mem: &mut Memory, dest: RegLable, src: RegLable) {
-        let a = dest
-            .lable_to_register_readable(self)
-            .read_from_register(&dest)
-            .into();
-        let ptr = src
-            .lable_to_register_readable(self)
-            .read_from_register(&src)
-            .into();
+    fn opcode_cp_memory(&mut self, mem: &mut Memory, dest: RegByte, src: RegWord) {
+        let a = self.regs.read_value8_from(dest);
+        let ptr = self.regs.read_value16_from(src);
+
+        let b = mem.read(ptr);
+        let flags = self.alu.cp_8(a, b);
+
+        self.regs.write_value8_to(RegByte::F, flags);
+    }
+
+    fn opcode_cp_byte(&mut self, mem: &mut Memory, dest: RegByte) {
+        let a = self.regs.read_value8_from(dest);
+
+        let b = self.fetch_byte(mem);
+        let flags = self.alu.cp_8(a, b);
+
+        self.regs.write_value8_to(RegByte::F, flags);
+    }
+
+    fn opcode_inc8(&mut self, dest: RegByte) {
+        let value = self.regs.read_value8_from(dest);
+
+        let result = self.alu.inc_8(value);
+        let flags = self.alu.flags();
+
+        self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
+    }
+
+    fn opcode_inc16(&mut self, dest: RegWord) {
+        let value = self.regs.read_value16_from(dest);
+
+        let result = self.alu.inc_16(value);
+
+        self.regs.write_value16_to(dest, result);
+    }
+
+    fn opcode_dec8(&mut self, dest: RegByte) {
+        let value = self.regs.read_value8_from(dest);
+
+        let result = self.alu.dec_8(value);
+        let flags = self.alu.flags();
+
+        self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
+    }
+
+    fn opcode_dec16(&mut self, dest: RegWord) {
+        let value = self.regs.read_value16_from(dest);
+
+        let result = self.alu.dec_16(value);
+
+        self.regs.write_value16_to(dest, result);
+    }
+
+    fn opcode_dec_memory(&mut self, mem: &mut Memory, dest: RegWord) {
+        let ptr = self.regs.read_value16_from(dest);
+
+        let value = mem.read(ptr);
+
+        let result = self.alu.dec_8(value);
+        let flags = self.alu.flags();
+
+        mem.write(ptr, value);
+
+        self.regs.write_value8_to(RegByte::F, flags)
+    }
+
+    fn opcode_or(&mut self, dest: RegByte, src: RegByte) {
+        let a = self.regs.read_value8_from(dest);
+        let b = self.regs.read_value8_from(src);
+
+        let result = self.alu.or_8(a, b);
+        let flags = self.alu.flags();
+
+        self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
+    }
+
+    fn opcode_or_memory(&mut self, mem: &mut Memory, dest: RegByte, src: RegWord) {
+        let a = self.regs.read_value8_from(dest);
+        let ptr = self.regs.read_value16_from(src);
 
         let b = mem.read(ptr);
 
-        let flags = self.alu.cp_8(a, b);
+        let result = self.alu.or_8(a, b);
+        let flags = self.alu.flags();
 
-        RegLable::Af
-            .lable_to_register_writeable(self)
-            .write_to_register(&RegLable::F, SizedArg::Size8(flags));
+        self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
-    fn opcode_cp_byte(&mut self, mem: &mut Memory, dest: RegLable) {
-        let a = dest
-            .lable_to_register_readable(self)
-            .read_from_register(&dest)
-            .into();
+    fn opcode_xor(&mut self, dest: RegByte, src: RegByte) {
+        let a = self.regs.read_value8_from(dest);
+        let b = self.regs.read_value8_from(src);
+
+        let result = self.alu.xor_8(a, b);
+        let flags = self.alu.flags();
+
+        self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
+    }
+
+    fn opcode_xor_memory(&mut self, mem: &mut Memory, dest: RegByte, src: RegWord) {
+        let a = self.regs.read_value8_from(dest);
+        let ptr = self.regs.read_value16_from(src);
+
+        let b = mem.read(ptr);
+
+        let result = self.alu.xor_8(a, b);
+        let flags = self.alu.flags();
+
+        self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
+    }
+
+    fn opcode_xor_byte(&mut self, mem: &mut Memory, dest: RegByte) {
+        let a = self.regs.read_value8_from(dest);
         let b = self.fetch_byte(mem);
 
-        let flags = self.alu.cp_8(a, b);
+        let result = self.alu.xor_8(a, b);
+        let flags = self.alu.flags();
 
-        RegLable::Af
-            .lable_to_register_writeable(self)
-            .write_to_register(&RegLable::F, SizedArg::Size8(flags));
+        self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
-    fn opcode_inc(&mut self, dest: RegLable) {
-        let value = dest
-            .lable_to_register_readable(self)
-            .read_from_register(&dest);
-        let (new_value, flags) = self.alu.inc_sized_arg(value);
+    fn opcode_and(&mut self, dest: RegByte, src: RegByte) {
+        let a = self.regs.read_value8_from(dest);
+        let b = self.regs.read_value8_from(src);
 
-        dest.lable_to_register_writeable(self)
-            .write_to_register(&dest, new_value);
+        let result = self.alu.and_8(a, b);
+        let flags = self.alu.flags();
 
-        if let Some(flags) = flags {
-            RegLable::Af
-                .lable_to_register_writeable(self)
-                .write_to_register(&RegLable::F, SizedArg::Size8(flags));
-        }
+        self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
-    fn opcode_dec(&mut self, dest: RegLable) {
-        let value = dest
-            .lable_to_register_readable(self)
-            .read_from_register(&dest);
+    fn opcode_and_byte(&mut self, mem: &mut Memory, dest: RegByte) {
+        let a = self.regs.read_value8_from(dest);
+        let b = self.fetch_byte(mem);
 
-        let (new_value, flags) = self.alu.dec_sized_arg(value);
+        let result = self.alu.and_8(a, b);
+        let flags = self.alu.flags();
 
-        dest.lable_to_register_writeable(self)
-            .write_to_register(&dest, new_value);
-
-        if let Some(flags) = flags {
-            RegLable::Af
-                .lable_to_register_writeable(self)
-                .write_to_register(&RegLable::F, SizedArg::Size8(flags));
-        }
+        self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
-    fn opcode_dec_memory(&mut self, mem: &mut Memory, dest: RegLable) {
-        let ptr = dest
-            .lable_to_register_readable(self)
-            .read_from_register(&dest)
-            .into();
+    fn opcode_adc(&mut self, dest: RegByte, src: RegByte) {
+        let a = self.regs.read_value8_from(dest);
+        let b = self.regs.read_value8_from(src);
 
-        let value = SizedArg::Size8(mem.read(ptr));
+        let result = self.alu.adc_8(a, b);
+        let flags = self.alu.flags();
 
-        let (new_value, flags) = self.alu.dec_sized_arg(value);
-
-        mem.write(ptr, new_value.into());
-
-        if let Some(flags) = flags {
-            RegLable::Af
-                .lable_to_register_writeable(self)
-                .write_to_register(&RegLable::F, SizedArg::Size8(flags));
-        }
+        self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
-    fn opcode_or(&mut self, dest: RegLable, src: RegLable) {
-        let a = dest
-            .lable_to_register_readable(self)
-            .read_from_register(&dest);
-        let b = src
-            .lable_to_register_readable(self)
-            .read_from_register(&src);
+    fn opcode_adc_byte(&mut self, mem: &mut Memory, dest: RegByte) {
+        let a = self.regs.read_value8_from(dest);
+        let b = self.fetch_byte(mem);
 
-        let (result, flags) = self.alu.or_sized_arg(a, b);
+        let result = self.alu.adc_8(a, b);
+        let flags = self.alu.flags();
 
-        dest.lable_to_register_writeable(self)
-            .write_to_register(&dest, result);
-
-        if let Some(flags) = flags {
-            RegLable::Af
-                .lable_to_register_writeable(self)
-                .write_to_register(&RegLable::F, SizedArg::Size8(flags));
-        }
+        self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
-    fn opcode_or_memory(&mut self, mem: &mut Memory, dest: RegLable, src: RegLable) {
-        let a = dest
-            .lable_to_register_readable(self)
-            .read_from_register(&dest);
-        let ptr = src
-            .lable_to_register_readable(self)
-            .read_from_register(&src)
-            .into();
+    fn opcode_add_register_word(&mut self, dest: RegWord, src: RegWord) {
+        let a = self.regs.read_value16_from(dest);
+        let b = self.regs.read_value16_from(src);
 
-        let b = SizedArg::Size8(mem.read(ptr));
+        let result = self.alu.add_16(a, b);
+        let flags = self.alu.flags();
 
-        let (result, flags) = self.alu.or_sized_arg(a, b);
-
-        dest.lable_to_register_writeable(self)
-            .write_to_register(&dest, result);
-
-        if let Some(flags) = flags {
-            RegLable::Af
-                .lable_to_register_writeable(self)
-                .write_to_register(&RegLable::F, SizedArg::Size8(flags));
-        }
+        self.regs.write_value16_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags)
     }
 
-    fn opcode_xor(&mut self, dest: RegLable, src: RegLable) {
-        let a = dest
-            .lable_to_register_readable(self)
-            .read_from_register(&dest);
-        let b = src
-            .lable_to_register_readable(self)
-            .read_from_register(&src);
+    fn opcode_add_register_byte(&mut self, dest: RegByte, src: RegByte) {
+        let a = self.regs.read_value8_from(dest);
+        let b = self.regs.read_value8_from(src);
 
-        let (result, flags) = self.alu.xor_sized_arg(a, b);
+        let result = self.alu.add_8(a, b);
+        let flags = self.alu.flags();
 
-        dest.lable_to_register_writeable(self)
-            .write_to_register(&dest, result);
-
-        if let Some(flags) = flags {
-            RegLable::Af
-                .lable_to_register_writeable(self)
-                .write_to_register(&RegLable::F, SizedArg::Size8(flags));
-        }
+        self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
-    fn opcode_xor_memory(&mut self, mem: &mut Memory, dest: RegLable, src: RegLable) {
-        let a = dest
-            .lable_to_register_readable(self)
-            .read_from_register(&dest);
-        let ptr = src
-            .lable_to_register_readable(self)
-            .read_from_register(&src)
-            .into();
-
-        let b = SizedArg::Size8(mem.read(ptr));
-
-        let (result, flags) = self.alu.xor_sized_arg(a, b);
-
-        dest.lable_to_register_writeable(self)
-            .write_to_register(&dest, result);
-
-        if let Some(flags) = flags {
-            RegLable::Af
-                .lable_to_register_writeable(self)
-                .write_to_register(&RegLable::F, SizedArg::Size8(flags));
-        }
-    }
-
-    fn opcode_xor_byte(&mut self, mem: &mut Memory, dest: RegLable) {
-        let a = dest
-            .lable_to_register_readable(self)
-            .read_from_register(&dest);
-        let value = SizedArg::Size8(self.fetch_byte(mem));
-
-        let (result, flags) = self.alu.xor_sized_arg(a, value);
-
-        dest.lable_to_register_writeable(self)
-            .write_to_register(&dest, result);
-
-        if let Some(flags) = flags {
-            RegLable::Af
-                .lable_to_register_writeable(self)
-                .write_to_register(&RegLable::F, SizedArg::Size8(flags));
-        }
-    }
-
-    fn opcode_and(&mut self, dest: RegLable, src: RegLable) {
-        let a = dest
-            .lable_to_register_readable(self)
-            .read_from_register(&dest);
-        let b = src
-            .lable_to_register_readable(self)
-            .read_from_register(&src);
-
-        let (result, flags) = self.alu.and_sized_arg(a, b);
-
-        dest.lable_to_register_writeable(self)
-            .write_to_register(&dest, result);
-
-        if let Some(flags) = flags {
-            RegLable::Af
-                .lable_to_register_writeable(self)
-                .write_to_register(&RegLable::F, SizedArg::Size8(flags));
-        }
-    }
-
-    fn opcode_and_byte(&mut self, mem: &mut Memory, dest: RegLable) {
-        let a = dest
-            .lable_to_register_readable(self)
-            .read_from_register(&dest);
-        let b = SizedArg::Size8(self.fetch_byte(mem));
-
-        let (result, flags) = self.alu.and_sized_arg(a, b);
-
-        dest.lable_to_register_writeable(self)
-            .write_to_register(&dest, result);
-
-        if let Some(flags) = flags {
-            RegLable::Af
-                .lable_to_register_writeable(self)
-                .write_to_register(&RegLable::F, SizedArg::Size8(flags));
-        }
-    }
-
-    fn opcode_adc(&mut self, dest: RegLable, src: RegLable) {
-        let a = dest
-            .lable_to_register_readable(self)
-            .read_from_register(&dest);
-        let b = src
-            .lable_to_register_readable(self)
-            .read_from_register(&src);
-
-        let (result, flags) = self.alu.adc_sized_arg(a, b);
-
-        dest.lable_to_register_writeable(self)
-            .write_to_register(&dest, result);
-
-        if let Some(flags) = flags {
-            RegLable::Af
-                .lable_to_register_writeable(self)
-                .write_to_register(&RegLable::F, SizedArg::Size8(flags));
-        }
-    }
-
-    fn opcode_adc_byte(&mut self, mem: &mut Memory, dest: RegLable) {
-        let a = dest
-            .lable_to_register_readable(self)
-            .read_from_register(&dest);
-        let b = SizedArg::Size8(self.fetch_byte(mem));
-
-        let (result, flags) = self.alu.adc_sized_arg(a, b);
-
-        dest.lable_to_register_writeable(self)
-            .write_to_register(&dest, result);
-
-        if let Some(flags) = flags {
-            RegLable::Af
-                .lable_to_register_writeable(self)
-                .write_to_register(&RegLable::F, SizedArg::Size8(flags));
-        }
-    }
-
-    fn opcode_add(&mut self, dest: RegLable, src: RegLable) {
-        let a = dest
-            .lable_to_register_readable(self)
-            .read_from_register(&dest);
-        let b = src
-            .lable_to_register_readable(self)
-            .read_from_register(&src);
-
-        let (result, flags) = self.alu.add_sized_args(a, b);
-
-        dest.lable_to_register_writeable(self)
-            .write_to_register(&dest, result);
-
-        if let Some(flags) = flags {
-            RegLable::Af
-                .lable_to_register_writeable(self)
-                .write_to_register(&RegLable::F, SizedArg::Size8(flags));
-        }
-    }
-
-    fn opcode_add_memory(&mut self, mem: &mut Memory, dest: RegLable, src: RegLable) {
-        let a = dest
-            .lable_to_register_readable(self)
-            .read_from_register(&dest);
-
-        let ptr = src
-            .lable_to_register_readable(self)
-            .read_from_register(&src)
-            .into();
+    fn opcode_add_memory(&mut self, mem: &mut Memory, dest: RegByte, src: RegWord) {
+        let a = self.regs.read_value8_from(dest);
+        let ptr = self.regs.read_value16_from(src);
 
         let b = mem.read(ptr);
 
-        let (result, flags) = self.alu.add_sized_args(a, SizedArg::Size8(b));
+        let result = self.alu.add_8(a, b);
+        let flags = self.alu.flags();
 
-        dest.lable_to_register_writeable(self)
-            .write_to_register(&dest, result);
-
-        if let Some(flags) = flags {
-            RegLable::Af
-                .lable_to_register_writeable(self)
-                .write_to_register(&RegLable::F, SizedArg::Size8(flags));
-        }
+        self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
-    fn opcode_add_value(&mut self, mem: &mut Memory, dest: RegLable) {
-        let a = dest
-            .lable_to_register_readable(self)
-            .read_from_register(&dest);
-        let b = SizedArg::Size8(self.fetch_byte(mem));
+    fn opcode_add_byte(&mut self, mem: &mut Memory, dest: RegByte) {
+        let a = self.regs.read_value8_from(dest);
+        let b = self.fetch_byte(mem);
 
-        let (result, flags) = self.alu.add_sized_args(a, b);
+        let result = self.alu.add_8(a, b);
+        let flags = self.alu.flags();
 
-        dest.lable_to_register_writeable(self)
-            .write_to_register(&dest, result);
-
-        if let Some(flags) = flags {
-            RegLable::Af
-                .lable_to_register_writeable(self)
-                .write_to_register(&RegLable::F, SizedArg::Size8(flags));
-        }
+        self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
-    fn opcode_sbc(&mut self, dest: RegLable, src: RegLable) {
-        let a = dest
-            .lable_to_register_readable(self)
-            .read_from_register(&dest);
-        let b = dest
-            .lable_to_register_readable(self)
-            .read_from_register(&src);
+    fn opcode_sbc(&mut self, dest: RegByte, src: RegByte) {
+        let a = self.regs.read_value8_from(dest);
+        let b = self.regs.read_value8_from(src);
 
-        let (result, flags) = self.alu.sbc_sized_arg(a, b);
+        let result = self.alu.sbc_8(a, b);
+        let flags = self.alu.flags();
 
-        dest.lable_to_register_writeable(self)
-            .write_to_register(&dest, result);
-
-        if let Some(flags) = flags {
-            RegLable::Af
-                .lable_to_register_writeable(self)
-                .write_to_register(&RegLable::F, SizedArg::Size8(flags));
-        }
+        self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
-    fn opcode_sub(&mut self, dest: RegLable, src: RegLable) {
-        let a = dest
-            .lable_to_register_readable(self)
-            .read_from_register(&dest);
-        let b = src
-            .lable_to_register_readable(self)
-            .read_from_register(&src);
+    fn opcode_sub(&mut self, dest: RegByte, src: RegByte) {
+        let a = self.regs.read_value8_from(dest);
+        let b = self.regs.read_value8_from(src);
 
-        let (result, flags) = self.alu.sub_sized_args(a, b);
+        let result = self.alu.sub_8(a, b);
+        let flags = self.alu.flags();
 
-        dest.lable_to_register_writeable(self)
-            .write_to_register(&dest, result);
-
-        if let Some(flags) = flags {
-            RegLable::Af
-                .lable_to_register_writeable(self)
-                .write_to_register(&RegLable::F, SizedArg::Size8(flags));
-        }
+        self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
-    fn opcode_sub_byte(&mut self, mem: &mut Memory, dest: RegLable) {
-        let a = dest
-            .lable_to_register_readable(self)
-            .read_from_register(&dest);
+    fn opcode_sub_byte(&mut self, mem: &mut Memory, dest: RegByte) {
+        let a = self.regs.read_value8_from(dest);
+        let b = self.fetch_byte(mem);
 
-        let b = SizedArg::Size8(self.fetch_byte(mem));
+        let result = self.alu.sub_8(a, b);
+        let flags = self.alu.flags();
 
-        let (result, flags) = self.alu.sub_sized_args(a, b);
-
-        dest.lable_to_register_writeable(self)
-            .write_to_register(&dest, result);
-
-        if let Some(flags) = flags {
-            RegLable::Af
-                .lable_to_register_writeable(self)
-                .write_to_register(&RegLable::F, SizedArg::Size8(flags));
-        }
+        self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
-    fn opcode_ld_register_to_memory(&mut self, mem: &mut Memory, dest: RegLable, src: RegLable) {
-        let addr = dest
-            .lable_to_register_readable(self)
-            .read_from_register(&dest)
-            .into();
+    fn opcode_ld_register_to_memory(&mut self, mem: &mut Memory, dest: RegWord, src: RegByte) {
+        let addr = self.regs.read_value16_from(dest);
 
-        let value = src
-            .lable_to_register_readable(self)
-            .read_from_register(&src)
-            .into();
+        let value = self.regs.read_value8_from(src);
 
         mem.write(addr, value);
     }
 
-    fn opcode_ld_memory_to_register(&mut self, mem: &Memory, dest: RegLable, src: RegLable) {
-        let addr = src
-            .lable_to_register_readable(self)
-            .read_from_register(&src)
-            .into();
+    fn opcode_ld_memory_to_register(&mut self, mem: &Memory, dest: RegByte, src: RegWord) {
+        let addr = self.regs.read_value16_from(src);
 
-        let value = SizedArg::Size8(mem.read(addr));
+        let value = mem.read(addr);
 
-        dest.lable_to_register_writeable(self)
-            .write_to_register(&dest, value);
+        self.regs.write_value8_to(dest, value);
     }
 
-    fn opcode_ld_value_to_register(&mut self, mem: &Memory, dest: RegLable) {
-        //let dest_reg = dest.lable_to_register_readable(self);
+    fn opcode_ld_byte_to_register(&mut self, mem: &Memory, dest: RegByte) {
+        let byte = self.fetch_byte(mem);
 
-        let arg = match RegSize::from(&dest) {
-            RegSize::Full => SizedArg::Size16(self.fetch_word(mem)),
-            RegSize::Half => SizedArg::Size8(self.fetch_byte(mem)),
-        };
-
-        dest.lable_to_register_writeable(self)
-            .write_to_register(&dest, arg)
+        self.regs.write_value8_to(dest, byte);
     }
 
-    fn opcode_ld_byte_to_memory(&mut self, mem: &mut Memory, dest: RegLable) {
-        let addr = dest
-            .lable_to_register_readable(self)
-            .read_from_register(&dest)
-            .into();
+    fn opcode_ld_word_to_register(&mut self, mem: &Memory, dest: RegWord) {
+        let word = self.fetch_word(mem);
+
+        self.regs.write_value16_to(dest, word);
+    }
+
+    fn opcode_ld_byte_to_memory(&mut self, mem: &mut Memory, dest: RegWord) {
+        let addr = self.regs.read_value16_from(dest);
         let value = self.fetch_byte(mem);
 
         mem.write(addr, value);
     }
 
-    fn opcode_ld_register_to_register(&mut self, dest: RegLable, src: RegLable) {
-        let argument = src
-            .lable_to_register_readable(self)
-            .read_from_register(&src);
+    fn opcode_ld_register_to_register(&mut self, dest: RegByte, src: RegByte) {
+        let src = self.regs.read_value8_from(src);
 
-        dest.lable_to_register_writeable(self)
-            .write_to_register(&dest, argument);
+        self.regs.write_value8_to(dest, src);
     }
 
-    fn opcode_ldi_register_to_memory(&mut self, mem: &mut Memory, dest: RegLable, src: RegLable) {
-        let value = src
-            .lable_to_register_readable(self)
-            .read_from_register(&src)
-            .into();
-
-        let addr = dest
-            .lable_to_register_readable(self)
-            .read_from_register(&dest)
-            .into();
+    fn opcode_ldi_register_to_memory(&mut self, mem: &mut Memory, dest: RegWord, src: RegByte) {
+        let value = self.regs.read_value8_from(src);
+        let addr = self.regs.read_value16_from(dest);
 
         mem.write(addr, value);
+        let result = self.alu.inc_16(addr);
 
-        let arg = dest
-            .lable_to_register_writeable(self)
-            .read_from_register(&dest);
-        let (new_arg, _) = self.alu.inc_sized_arg(arg);
-
-        dest.lable_to_register_writeable(self)
-            .write_to_register(&dest, new_arg);
+        self.regs.write_value16_to(dest, result);
     }
 
-    fn opcode_ldi_memory_to_register(&mut self, mem: &mut Memory, dest: RegLable, src: RegLable) {
-        let addr = src
-            .lable_to_register_readable(self)
-            .read_from_register(&src)
-            .into();
-
+    fn opcode_ldi_memory_to_register(&mut self, mem: &mut Memory, dest: RegByte, src: RegWord) {
+        let addr = self.regs.read_value16_from(src);
         let value = mem.read(addr);
 
-        dest.lable_to_register_writeable(self)
-            .write_to_register(&dest, SizedArg::Size8(value));
+        self.regs.write_value8_to(dest, value);
+        let result = self.alu.inc_16(addr);
 
-        let arg = src
-            .lable_to_register_writeable(self)
-            .read_from_register(&src);
-        let (new_arg, _) = self.alu.inc_sized_arg(arg);
-
-        src.lable_to_register_writeable(self)
-            .write_to_register(&src, new_arg);
+        self.regs.write_value16_to(src, result);
     }
 
-    fn opcode_ldd_register_to_memory(&mut self, mem: &mut Memory, dest: RegLable, src: RegLable) {
-        let value = src
-            .lable_to_register_readable(self)
-            .read_from_register(&src)
-            .into();
-
-        let addr = dest
-            .lable_to_register_readable(self)
-            .read_from_register(&dest)
-            .into();
+    fn opcode_ldd_register_to_memory(&mut self, mem: &mut Memory, dest: RegWord, src: RegByte) {
+        let value = self.regs.read_value8_from(src);
+        let addr = self.regs.read_value16_from(dest);
 
         mem.write(addr, value);
+        let result = self.alu.dec_16(addr);
 
-        let arg = dest
-            .lable_to_register_writeable(self)
-            .read_from_register(&dest);
-        let (new_arg, _) = self.alu.dec_sized_arg(arg);
-
-        dest.lable_to_register_writeable(self)
-            .write_to_register(&dest, new_arg);
+        self.regs.write_value16_to(dest, result);
     }
 
-    fn opcode_ldd_memory_to_register(&mut self, mem: &mut Memory, dest: RegLable, src: RegLable) {
-        let addr = src
-            .lable_to_register_readable(self)
-            .read_from_register(&src)
-            .into();
-
+    fn opcode_ldd_memory_to_register(&mut self, mem: &mut Memory, dest: RegByte, src: RegWord) {
+        let addr = self.regs.read_value16_from(src);
         let value = mem.read(addr);
 
-        dest.lable_to_register_writeable(self)
-            .write_to_register(&dest, SizedArg::Size8(value));
+        self.regs.write_value8_to(dest, value);
 
-        let arg = src
-            .lable_to_register_writeable(self)
-            .read_from_register(&src);
-        let (new_arg, _) = self.alu.dec_sized_arg(arg);
+        let result = self.alu.dec_16(addr);
 
-        src.lable_to_register_writeable(self)
-            .write_to_register(&src, new_arg);
+        self.regs.write_value16_to(src, result);
     }
 
-    fn opcode_ld_register_to_address(&mut self, mem: &mut Memory, src: RegLable) {
+    fn opcode_ld_register_to_address(&mut self, mem: &mut Memory, src: RegByte) {
         let addr = self.fetch_word(mem);
-        let value = src
-            .lable_to_register_readable(self)
-            .read_from_register(&src)
-            .into();
+        let value = self.regs.read_value8_from(src);
 
         mem.write(addr, value);
     }
 
-    fn opcode_ldh_register_to_address(&mut self, mem: &mut Memory, src: RegLable) {
+    fn opcode_ldh_register_to_address(&mut self, mem: &mut Memory, src: RegByte) {
         let offset = self.fetch_byte(mem);
         let addr = 0xFF00 + offset as u16;
-        let value = src
-            .lable_to_register_readable(self)
-            .read_from_register(&src)
-            .into();
+        let value = self.regs.read_value8_from(src);
 
         mem.write(addr, value);
     }
 
-    fn opcode_ldh_address_to_register(&mut self, mem: &mut Memory, dest: RegLable) {
+    fn opcode_ldh_address_to_register(&mut self, mem: &mut Memory, dest: RegByte) {
         let offset = self.fetch_byte(mem);
         let addr = 0xFF00 + offset as u16;
 
-        let value = SizedArg::Size8(mem.read(addr));
+        let value = mem.read(addr);
 
-        dest.lable_to_register_writeable(self)
-            .write_to_register(&dest, value);
+        self.regs.write_value8_to(dest, value);
     }
 
-    fn opcode_ld_address_to_register(&mut self, mem: &mut Memory, dest: RegLable) {
+    fn opcode_ld_address_to_register(&mut self, mem: &mut Memory, dest: RegByte) {
         let addr = self.fetch_word(mem);
 
         let value = mem.read(addr);
 
-        dest.lable_to_register_writeable(self)
-            .write_to_register(&dest, SizedArg::Size8(value));
+        self.regs.write_value8_to(dest, value);
     }
 
-    fn opcode_push(&mut self, mem: &mut Memory, src: RegLable) {
-        let value: u16 = src
-            .lable_to_register_readable(self)
-            .read_from_register(&src)
-            .into();
+    fn opcode_push(&mut self, mem: &mut Memory, src: RegWord) {
+        let value: u16 = self.regs.read_value16_from(src);
 
         let hi_byte = (value >> 8) as u8;
         let lo_byte = value as u8;
@@ -931,19 +700,18 @@ impl Cpu {
         mem.write(self.sp, lo_byte);
     }
 
-    fn opcode_pop(&mut self, mem: &mut Memory, dest: RegLable, is_flag_register: bool) {
+    fn opcode_pop(&mut self, mem: &mut Memory, dest: RegWord, is_flag_register: bool) {
         let lo_byte = mem.read(self.sp);
         self.sp += 1;
         let hi_byte = mem.read(self.sp);
         self.sp += 1;
 
-        let arg = SizedArg::Size16(((hi_byte as u16) << 8) | lo_byte as u16);
+        let value = ((hi_byte as u16) << 8) | lo_byte as u16;
 
         if is_flag_register {
             self.alu.restore_flags(lo_byte);
         }
-        dest.lable_to_register_writeable(self)
-            .write_to_register(&dest, arg);
+        self.regs.write_value16_to(dest, value);
     }
 
     fn opcode_jp(&mut self, mem: &mut Memory) {
@@ -953,36 +721,32 @@ impl Cpu {
 
     fn opcode_jp_nz(&mut self, mem: &mut Memory) {
         let addr = self.fetch_word(mem);
-        let flags: u8 = self.af.read_from_register(&RegLable::F).into();
 
-        if !((flags >> 7) & 0x01) == 0x00 {
+        if !self.alu.check_zero_flag() {
             self.pc = addr;
         }
     }
 
     fn opcode_jp_z(&mut self, mem: &mut Memory) {
         let addr = self.fetch_word(mem);
-        let flags: u8 = self.af.read_from_register(&RegLable::F).into();
 
-        if ((flags >> 7) & 0x01) == 0x01 {
+        if self.alu.check_zero_flag() {
             self.pc = addr;
         }
     }
 
     fn opcode_jp_nc(&mut self, mem: &mut Memory) {
         let addr = self.fetch_word(mem);
-        let flags: u8 = self.af.read_from_register(&RegLable::F).into();
 
-        if !((flags >> 4) & 0x01) == 0x00 {
+        if !self.alu.check_carry_flag() {
             self.pc = addr;
         }
     }
 
     fn opcode_jp_c(&mut self, mem: &mut Memory) {
         let addr = self.fetch_word(mem);
-        let flags: u8 = self.af.read_from_register(&RegLable::F).into();
 
-        if ((flags >> 4) & 0x01) == 0x01 {
+        if self.alu.check_carry_flag() {
             self.pc = addr;
         }
     }
@@ -996,9 +760,8 @@ impl Cpu {
 
     fn opcode_jr_nz(&mut self, mem: &mut Memory) {
         let offset = self.fetch_byte(mem) as i8;
-        let flags: u8 = self.af.read_from_register(&RegLable::F).into();
 
-        if ((flags >> 7) & 0x01) == 0x00 {
+        if !self.alu.check_zero_flag() {
             //self.pc = (self.pc as i16 + offset as i16) as u16;
             self.pc = (self.pc as i16).overflowing_add(offset as i16).0 as u16
         }
@@ -1006,46 +769,37 @@ impl Cpu {
 
     fn opcode_jr_z(&mut self, mem: &mut Memory) {
         let offset = self.fetch_byte(mem) as i8;
-        let flags: u8 = self.af.read_from_register(&RegLable::F).into();
 
-        if ((flags >> 7) & 0x01) == 0x01 {
+        if self.alu.check_zero_flag() {
             //FUFUFUFUFUFUFUFU !!!
             self.pc = (self.pc as i16).overflowing_add(offset as i16).0 as u16;
         }
     }
     fn opcode_jr_nc(&mut self, mem: &mut Memory) {
         let offset = self.fetch_byte(mem) as i8;
-        let flags: u8 = self.af.read_from_register(&RegLable::F).into();
 
-        if ((flags >> 4) & 0x01) == 0x00 {
+        if !self.alu.check_carry_flag() {
             self.pc = (self.pc as i16).overflowing_add(offset as i16).0 as u16;
         }
     }
 
     fn opcode_jr_c(&mut self, mem: &mut Memory) {
         let offset = self.fetch_byte(mem) as i8;
-        let flags: u8 = self.af.read_from_register(&RegLable::F).into();
 
-        if ((flags >> 4) & 0x01) == 0x01 {
+        if self.alu.check_carry_flag() {
             self.pc = (self.pc as i16).overflowing_add(offset as i16).0 as u16;
         }
     }
 
-    fn opcode_jp_hl(&mut self, src: RegLable) {
-        let addr: u16 = src
-            .lable_to_register_readable(&self)
-            .read_from_register(&src)
-            .into();
-
+    fn opcode_jp_hl(&mut self, src: RegWord) {
+        let addr: u16 = self.regs.read_value16_from(src);
         self.pc = addr;
     }
 
     fn opcode_call_nz(&mut self, mem: &mut Memory) {
         let addr = self.fetch_word(mem);
 
-        let flags: u8 = self.af.read_from_register(&RegLable::F).into();
-
-        if ((flags >> 7) & 0x01) == 0x00 {
+        if !self.alu.check_zero_flag() {
             let lo_byte = self.pc as u8;
             let hi_byte = (self.pc >> 8) as u8;
 
@@ -1061,9 +815,7 @@ impl Cpu {
     fn opcode_call_z(&mut self, mem: &mut Memory) {
         let addr = self.fetch_word(mem);
 
-        let flags: u8 = self.af.read_from_register(&RegLable::F).into();
-
-        if ((flags >> 7) & 0x01) == 0x01 {
+        if self.alu.check_zero_flag() {
             let lo_byte = self.pc as u8;
             let hi_byte = (self.pc >> 8) as u8;
 
@@ -1079,9 +831,7 @@ impl Cpu {
     fn opcode_call_c(&mut self, mem: &mut Memory) {
         let addr = self.fetch_word(mem);
 
-        let flags: u8 = self.af.read_from_register(&RegLable::F).into();
-
-        if ((flags >> 4) & 0x01) == 0x01 {
+        if self.alu.check_carry_flag() {
             let lo_byte = self.pc as u8;
             let hi_byte = (self.pc >> 8) as u8;
 
@@ -1120,26 +870,18 @@ impl Cpu {
         self.pc = value;
     }
 
-    fn opcode_rr(&mut self, dest: RegLable) {
-        let a = dest
-            .lable_to_register_readable(self)
-            .read_from_register(&dest)
-            .into();
+    fn opcode_rr(&mut self, dest: RegByte) {
+        let a = self.regs.read_value8_from(dest);
 
-        let (result, flags) = self.alu.rotate_right_8(a);
+        let result = self.alu.rotate_right_8(a);
+        let flags = self.alu.flags();
 
-        dest.lable_to_register_writeable(self)
-            .write_to_register(&dest, SizedArg::Size8(result));
-
-        RegLable::F
-            .lable_to_register_writeable(self)
-            .write_to_register(&RegLable::F, SizedArg::Size8(flags));
+        self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_ret_nc(&mut self, mem: &mut Memory) {
-        let flags: u8 = self.af.read_from_register(&RegLable::F).into();
-
-        if ((flags >> 4) & 0x01) == 0x00 {
+        if !self.alu.check_carry_flag() {
             let lo_byte = mem.read(self.sp);
             self.sp += 1;
             let hi_byte = mem.read(self.sp);
@@ -1150,9 +892,7 @@ impl Cpu {
     }
 
     fn opcode_ret_c(&mut self, mem: &mut Memory) {
-        let flags: u8 = self.af.read_from_register(&RegLable::F).into();
-
-        if ((flags >> 4) & 0x01) == 0x01 {
+        if self.alu.check_carry_flag() {
             let lo_byte = mem.read(self.sp);
             self.sp += 1;
             let hi_byte = mem.read(self.sp);
@@ -1163,13 +903,7 @@ impl Cpu {
     }
 
     fn opcode_ret_z(&mut self, mem: &mut Memory) {
-        let flags: u8 = self.af.read_from_register(&RegLable::F).into();
-
-        // NOTE TO SELF: Next time when i implement conditionals returns make god damn sure to read the return
-        // after(!!!!) we checked that we actually jump when we not do this the return address is "popped" from the stack
-        // and the next ret in the chain jumps into god knows where...this bull**** has costs me more hours than really
-        // necessary...
-        if ((flags >> 7) & 0x01) == 0x01 {
+        if self.alu.check_zero_flag() {
             let lo_byte = mem.read(self.sp);
             self.sp += 1;
             let hi_byte = mem.read(self.sp);
@@ -1181,9 +915,7 @@ impl Cpu {
     }
 
     fn opcode_ret_nz(&mut self, mem: &mut Memory) {
-        let flags: u8 = self.af.read_from_register(&RegLable::F).into();
-
-        if ((flags >> 7) & 0x01) == 0x00 {
+        if !self.alu.check_zero_flag() {
             let lo_byte = mem.read(self.sp);
             self.sp += 1;
             let hi_byte = mem.read(self.sp);
@@ -1221,34 +953,24 @@ impl Cpu {
         mem.write(addr + 1, hi_byte);
     }
 
-    fn opcode_swap_register(&mut self, dest: RegLable) {
-        let value: u8 = dest
-            .lable_to_register_readable(self)
-            .read_from_register(&dest)
-            .into();
+    fn opcode_swap_register(&mut self, dest: RegByte) {
+        let value: u8 = self.regs.read_value8_from(dest);
 
         let hi_byte: u8 = value & 0xF0;
         let lo_byte: u8 = value & 0x0F;
 
-        let new = lo_byte << 4 | hi_byte >> 4;
+        let result = lo_byte << 4 | hi_byte >> 4;
 
-        dest.lable_to_register_writeable(self)
-            .write_to_register(&dest, SizedArg::Size8(new));
+        self.regs.write_value8_to(dest, result);
     }
 
-    fn opcode_srl_register(&mut self, dest: RegLable) {
-        let value = dest
-            .lable_to_register_readable(self)
-            .read_from_register(&dest)
-            .into();
+    fn opcode_srl_register(&mut self, dest: RegByte) {
+        let value = self.regs.read_value8_from(dest);
 
-        let (result, flags) = self.alu.shift_right_8(value);
+        let result = self.alu.shift_right_8(value);
+        let flags = self.alu.flags();
 
-        dest.lable_to_register_writeable(self)
-            .write_to_register(&dest, SizedArg::Size8(result));
-
-        RegLable::Af
-            .lable_to_register_writeable(self)
-            .write_to_register(&RegLable::F, SizedArg::Size8(flags));
+        self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 }

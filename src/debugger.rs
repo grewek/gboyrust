@@ -147,11 +147,17 @@ impl Debugger {
 
     pub fn get_cpu_state(&self) -> [String; 6] {
         [
-            format!(
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
+            /*format!(
                 "AF: {:04X} [A: {:02X}, F: {:02X}]",
-                self.cpu.af.get(),
-                self.cpu.af.get_high(),
-                self.cpu.af.get_low()
+                self.cpu.regs.read_value16_from(RegisterComplete::Af),
+                self.cpu.regs.read_value8_from(RegisterPart::A),
+                self.cpu.regs.read_value8_from(RegisterPart::F),
             ),
             format!(
                 "BC: {:04X} [B: {:02X}, C: {:02X}]",
@@ -172,12 +178,13 @@ impl Debugger {
                 self.cpu.hl.get_low()
             ),
             format!("SP: {:04X}", self.cpu.sp),
-            format!("PC: {:04X}", self.cpu.pc),
+            format!("PC: {:04X}", self.cpu.pc),*/
         ]
     }
 
     pub fn get_flags(&self) -> String {
-        let flags = self.cpu.af.get_low();
+        let flags = 0x00;
+        //let flags = self.cpu.af.get_low();
 
         let zero_state = flags >> 7 & 0x01;
         let negative_state = flags >> 6 & 0x01;

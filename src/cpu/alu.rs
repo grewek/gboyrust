@@ -1,9 +1,12 @@
-use super::register::SizedArg;
+const ZERO_BIT_MASK: u8 = 0x01 << ZERO_BIT_INDEX;
+const NEGATIVE_BIT_MASK: u8 = 0x01 << NEGATIVE_BIT_INDEX;
+const HALF_CARRY_BIT_MASK: u8 = 0x01 << HALF_CARRY_BIT_INDEX;
+const CARRY_BIT_MASK: u8 = 0x01 << CARRY_BIT_INDEX;
 
-const ZERO_BIT_MASK: u8 = 0x01 << 7;
-const NEGATIVE_BIT_MASK: u8 = 0x01 << 6;
-const HALF_CARRY_BIT_MASK: u8 = 0x01 << 5;
-const CARRY_BIT_MASK: u8 = 0x01 << 4;
+const ZERO_BIT_INDEX: u8 = 7;
+const NEGATIVE_BIT_INDEX: u8 = 6;
+const HALF_CARRY_BIT_INDEX: u8 = 5;
+const CARRY_BIT_INDEX: u8 = 4;
 
 pub struct Alu {
     flags: u8,
@@ -16,7 +19,7 @@ impl Default for Alu {
 }
 
 impl Alu {
-    pub fn shift_right_8(&mut self, a: u8) -> (u8, u8) {
+    pub fn shift_right_8(&mut self, a: u8) -> u8 {
         let carry = a & 0x01;
         let result = a >> 1;
 
@@ -25,10 +28,10 @@ impl Alu {
         self.clear_half_carry();
         self.toggle_carry(carry == 0x01);
 
-        (result, self.flags)
+        result
     }
 
-    pub fn rotate_right_8(&mut self, a: u8) -> (u8, u8) {
+    pub fn rotate_right_8(&mut self, a: u8) -> u8 {
         let carry = ((self.flags & CARRY_BIT_MASK) >> 4) & 0x01;
         let next_carry = a & 0x01;
         let mut result = a >> 1;
@@ -39,22 +42,22 @@ impl Alu {
         self.clear_half_carry();
         self.toggle_carry(next_carry == 0x01);
 
-        (result, self.flags)
+        result
     }
 
-    pub fn rotate_left_8(&mut self, a: u8) -> (u8, u8) {
+    pub fn rotate_left_8(&mut self, a: u8) -> u8 {
         let next_carry = (a >> 7) & 0x01;
-        let mut result = a.rotate_left(1);
+        let result = a.rotate_left(1);
 
         self.clear_zero();
         self.clear_negative();
         self.clear_half_carry();
         self.toggle_carry(next_carry == 0x01);
 
-        (result, self.flags) // 0000 | 1101 = 1101 // 1111 | 1101 = 1101 // 1111 | 0000 = 1111
+        result
     }
 
-    fn or_8(&mut self, a: u8, b: u8) -> u8 {
+    pub fn or_8(&mut self, a: u8, b: u8) -> u8 {
         let result = a | b;
 
         self.toggle_zero(result);
@@ -64,7 +67,8 @@ impl Alu {
 
         result
     }
-    fn xor_8(&mut self, a: u8, b: u8) -> u8 {
+
+    pub fn xor_8(&mut self, a: u8, b: u8) -> u8 {
         let result = a ^ b;
 
         self.toggle_zero(result);
@@ -75,7 +79,7 @@ impl Alu {
         result
     }
 
-    fn and_8(&mut self, a: u8, b: u8) -> u8 {
+    pub fn and_8(&mut self, a: u8, b: u8) -> u8 {
         let result = a & b;
 
         self.toggle_zero(result);
@@ -85,7 +89,8 @@ impl Alu {
 
         result
     }
-    fn add_16(&mut self, a: u16, b: u16) -> u16 {
+
+    pub fn add_16(&mut self, a: u16, b: u16) -> u16 {
         let (result, overflow) = a.overflowing_add(b);
 
         self.clear_negative();
@@ -95,7 +100,7 @@ impl Alu {
         result
     }
 
-    fn adc_8(&mut self, a: u8, b: u8) -> u8 {
+    pub fn adc_8(&mut self, a: u8, b: u8) -> u8 {
         let carry = (self.flags >> 4) & 0x01;
 
         let (b_with_carry, overflow_bc) = b.overflowing_add(carry);
@@ -108,7 +113,8 @@ impl Alu {
 
         result
     }
-    fn add_8(&mut self, a: u8, b: u8) -> u8 {
+
+    pub fn add_8(&mut self, a: u8, b: u8) -> u8 {
         let (result, overflow) = a.overflowing_add(b);
 
         self.toggle_zero(result);
@@ -119,11 +125,7 @@ impl Alu {
         result
     }
 
-    //fn sub_16(&mut self, a: u16, b: u16) -> u16 {
-    //    a.overflowing_sub(b).0
-    //}
-
-    fn sbc_8(&mut self, a: u8, b: u8) -> u8 {
+    pub fn sbc_8(&mut self, a: u8, b: u8) -> u8 {
         let carry = (self.flags >> 4) & 0x01;
 
         let (b_with_carry, overflow_bc) = b.overflowing_add(carry);
@@ -137,7 +139,7 @@ impl Alu {
         result
     }
 
-    fn sub_8(&mut self, a: u8, b: u8) -> u8 {
+    pub fn sub_8(&mut self, a: u8, b: u8) -> u8 {
         let (result, overflow) = a.overflowing_sub(b);
 
         self.toggle_zero(result);
@@ -148,11 +150,11 @@ impl Alu {
         result
     }
 
-    fn inc_16(&self, value: u16) -> u16 {
+    pub fn inc_16(&self, value: u16) -> u16 {
         value.overflowing_add(1).0
     }
 
-    fn inc_8(&mut self, value: u8) -> u8 {
+    pub fn inc_8(&mut self, value: u8) -> u8 {
         let new = value.overflowing_add(1).0;
 
         //TODO: Half Carry
@@ -219,11 +221,27 @@ impl Alu {
         self.flags |= NEGATIVE_BIT_MASK;
     }
 
-    fn dec_16(&self, value: u16) -> u16 {
+    pub fn check_zero_flag(&self) -> bool {
+        (self.flags >> ZERO_BIT_INDEX) & 0x01 == 0x01
+    }
+
+    pub fn check_negative_flag(&self) -> bool {
+        (self.flags >> NEGATIVE_BIT_INDEX) & 0x01 == 0x01
+    }
+
+    pub fn check_half_carry_flag(&self) -> bool {
+        (self.flags >> HALF_CARRY_BIT_INDEX) & 0x01 == 0x01
+    }
+
+    pub fn check_carry_flag(&self) -> bool {
+        (self.flags >> CARRY_BIT_INDEX) & 0x01 == 0x01
+    }
+
+    pub fn dec_16(&self, value: u16) -> u16 {
         value.overflowing_sub(1).0
     }
 
-    fn dec_8(&mut self, value: u8) -> u8 {
+    pub fn dec_8(&mut self, value: u8) -> u8 {
         let new = value.overflowing_sub(1).0;
 
         self.toggle_zero(new);
@@ -235,88 +253,8 @@ impl Alu {
         self.flags = new_flags;
     }
 
-    pub fn sub_sized_args(&mut self, a: SizedArg, b: SizedArg) -> (SizedArg, Option<u8>) {
-        match (a, b) {
-            //(SizedArg::Size16(a), SizedArg::Size16(b)) => {
-            //    (SizedArg::Size16(self.sub_16(a, b)), None)
-            //}
-            (SizedArg::Size8(a), SizedArg::Size8(b)) => {
-                (SizedArg::Size8(self.sub_8(a, b)), Some(self.flags))
-            }
-            _ => panic!(
-                "Tried to subtract values of different sizes i.e. a 8bit value with a 16bit value !"
-            ),
-        }
-    }
-    pub fn add_sized_args(&mut self, a: SizedArg, b: SizedArg) -> (SizedArg, Option<u8>) {
-        match (a, b) {
-            (SizedArg::Size16(a), SizedArg::Size16(b)) => {
-                (SizedArg::Size16(self.add_16(a, b)), Some(self.flags))
-            }
-            (SizedArg::Size8(a), SizedArg::Size8(b)) => {
-                (SizedArg::Size8(self.add_8(a, b)), Some(self.flags))
-            }
-            _ => panic!(
-                "Tried to add values of different sizes i.e. a 8bit value with a 16bit value !"
-            ),
-        }
-    }
-    pub fn inc_sized_arg(&mut self, arg: SizedArg) -> (SizedArg, Option<u8>) {
-        match arg {
-            SizedArg::Size16(value) => (SizedArg::Size16(self.inc_16(value)), None),
-            SizedArg::Size8(value) => (SizedArg::Size8(self.inc_8(value)), Some(self.flags)),
-        }
-    }
-
-    pub fn dec_sized_arg(&mut self, arg: SizedArg) -> (SizedArg, Option<u8>) {
-        match arg {
-            SizedArg::Size16(value) => (SizedArg::Size16(self.dec_16(value)), None),
-            SizedArg::Size8(value) => (SizedArg::Size8(self.dec_8(value)), Some(self.flags)),
-        }
-    }
-
-    pub fn adc_sized_arg(&mut self, a: SizedArg, b: SizedArg) -> (SizedArg, Option<u8>) {
-        match (a, b) {
-            (SizedArg::Size8(a), SizedArg::Size8(b)) => {
-                (SizedArg::Size8(self.adc_8(a, b)), Some(self.flags))
-            }
-            _ => panic!("blegh"),
-        }
-    }
-    pub fn sbc_sized_arg(&mut self, a: SizedArg, b: SizedArg) -> (SizedArg, Option<u8>) {
-        match (a, b) {
-            (SizedArg::Size8(a), SizedArg::Size8(b)) => {
-                (SizedArg::Size8(self.sbc_8(a, b)), Some(self.flags))
-            }
-            _ => panic!("blah"),
-        }
-    }
-
-    pub fn and_sized_arg(&mut self, a: SizedArg, b: SizedArg) -> (SizedArg, Option<u8>) {
-        match (a, b) {
-            (SizedArg::Size8(a), SizedArg::Size8(b)) => {
-                (SizedArg::Size8(self.and_8(a, b)), Some(self.flags))
-            }
-            _ => panic!("Whoopsie"),
-        }
-    }
-
-    pub fn xor_sized_arg(&mut self, a: SizedArg, b: SizedArg) -> (SizedArg, Option<u8>) {
-        match (a, b) {
-            (SizedArg::Size8(a), SizedArg::Size8(b)) => {
-                (SizedArg::Size8(self.xor_8(a, b)), Some(self.flags))
-            }
-            _ => panic!("Oh my god please refactor these nonsensical functions..."),
-        }
-    }
-
-    pub fn or_sized_arg(&mut self, a: SizedArg, b: SizedArg) -> (SizedArg, Option<u8>) {
-        match (a, b) {
-            (SizedArg::Size8(a), SizedArg::Size8(b)) => {
-                (SizedArg::Size8(self.or_8(a, b)), Some(self.flags))
-            }
-            _ => panic!("..."),
-        }
+    pub fn flags(&self) -> u8 {
+        self.flags
     }
 }
 
@@ -329,59 +267,70 @@ mod test {
         let mut alu = Alu::default();
         let value_zero = 0b00_00_00_00;
 
-        let (result, flags) = alu.rotate_right_8(value_zero);
+        let result = alu.rotate_right_8(value_zero);
+        let flags = alu.flags();
 
         assert_eq!(result, 0b00_00_00_00);
         assert_eq!(flags, 0b00_00_00_00);
 
         let value_one = 0b00_00_00_01;
 
-        let (result, flags) = alu.rotate_right_8(value_one);
+        let result = alu.rotate_right_8(value_one);
+        let flags = alu.flags();
 
         assert_eq!(result, 0b00_00_00_00);
         assert_eq!(flags, 0b00_01_00_00);
 
-        let (result, flags) = alu.rotate_right_8(result);
+        let result = alu.rotate_right_8(result);
+        let flags = alu.flags();
 
         assert_eq!(result, 0b10_00_00_00);
         assert_eq!(flags, 0b00_00_00_00);
 
-        let (result, flags) = alu.rotate_right_8(result);
+        let result = alu.rotate_right_8(result);
+        let flags = alu.flags();
 
         assert_eq!(result, 0b01_00_00_00);
         assert_eq!(flags, 0b00_00_00_00);
 
-        let (result, flags) = alu.rotate_right_8(result);
+        let result = alu.rotate_right_8(result);
+        let flags = alu.flags();
 
         assert_eq!(result, 0b00_10_00_00);
         assert_eq!(flags, 0b00_00_00_00);
 
-        let (result, flags) = alu.rotate_right_8(result);
+        let result = alu.rotate_right_8(result);
+        let flags = alu.flags();
 
         assert_eq!(result, 0b00_01_00_00);
         assert_eq!(flags, 0b00_00_00_00);
 
-        let (result, flags) = alu.rotate_right_8(result);
+        let result = alu.rotate_right_8(result);
+        let flags = alu.flags();
 
         assert_eq!(result, 0b00_00_10_00);
         assert_eq!(flags, 0b00_00_00_00);
 
-        let (result, flags) = alu.rotate_right_8(result);
+        let result = alu.rotate_right_8(result);
+        let flags = alu.flags();
 
         assert_eq!(result, 0b00_00_01_00);
         assert_eq!(flags, 0b00_00_00_00);
 
-        let (result, flags) = alu.rotate_right_8(result);
+        let result = alu.rotate_right_8(result);
+        let flags = alu.flags();
 
         assert_eq!(result, 0b00_00_00_10);
         assert_eq!(flags, 0b00_00_00_00);
 
-        let (result, flags) = alu.rotate_right_8(result);
+        let result = alu.rotate_right_8(result);
+        let flags = alu.flags();
 
         assert_eq!(result, 0b00_00_00_01);
         assert_eq!(flags, 0b00_00_00_00);
 
-        let (result, flags) = alu.rotate_right_8(value_one);
+        let result = alu.rotate_right_8(value_one);
+        let flags = alu.flags();
 
         assert_eq!(result, 0b00_00_00_00);
         assert_eq!(flags, 0b00_01_00_00);
@@ -442,5 +391,31 @@ mod test {
         assert_eq!(alu.flags, 0b01_01_00_00);
         alu.toggle_zero(0x00);
         assert_eq!(alu.flags, 0b11_01_00_00);
+    }
+
+    #[test]
+    fn test_check_flags() {
+        let mut alu = Alu::default();
+
+        alu.flags = 0b11_11_00_00;
+
+        assert_eq!(alu.check_zero_flag(), true);
+        assert_eq!(alu.check_negative_flag(), true);
+        assert_eq!(alu.check_half_carry_flag(), true);
+        assert_eq!(alu.check_carry_flag(), true);
+
+        alu.flags = 0b01_01_00_00;
+
+        assert_eq!(alu.check_zero_flag(), false);
+        assert_eq!(alu.check_negative_flag(), true);
+        assert_eq!(alu.check_half_carry_flag(), false);
+        assert_eq!(alu.check_carry_flag(), true);
+
+        alu.flags = 0b010_10_00_00;
+
+        assert_eq!(alu.check_zero_flag(), true);
+        assert_eq!(alu.check_negative_flag(), false);
+        assert_eq!(alu.check_half_carry_flag(), true);
+        assert_eq!(alu.check_carry_flag(), false);
     }
 }
