@@ -1,5 +1,6 @@
 mod alu;
 mod register;
+mod registers2;
 use register::Register;
 
 use crate::memory::Memory;
