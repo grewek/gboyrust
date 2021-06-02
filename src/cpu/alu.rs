@@ -163,15 +163,13 @@ impl Alu {
         new
     }
 
-    pub fn cp_8(&mut self, accu: u8, value: u8) -> u8 {
+    pub fn cp_8(&mut self, accu: u8, value: u8) {
         let (result, overflow) = accu.overflowing_sub(value);
 
         self.toggle_zero(result);
         self.set_negative();
         //TODO: Half Carry !
         self.toggle_carry(overflow);
-
-        self.flags
     }
 
     fn toggle_carry(&mut self, overflowed: bool) {
@@ -338,25 +336,25 @@ mod test {
 
     #[test]
     fn test_cp_8bit() {
-        let mut cpu = Alu::default();
-        let flags = cpu.cp_8(0x80, 0x80);
+        let mut alu = Alu::default();
+        alu.cp_8(0x80, 0x80);
 
-        assert_eq!(flags, 0b11_00_00_00);
+        assert_eq!(alu.flags, 0b11_00_00_00);
 
-        let flags = cpu.cp_8(0x80, 0xFF);
+        alu.cp_8(0x80, 0xFF);
 
-        assert_eq!(flags, 0b01_01_00_00);
+        assert_eq!(alu.flags, 0b01_01_00_00);
 
-        let flags = cpu.cp_8(0x79, 0x20);
+        alu.cp_8(0x79, 0x20);
 
-        assert_eq!(flags, 0b01_00_00_00);
+        assert_eq!(alu.flags, 0b01_00_00_00);
     }
 
     #[test]
     fn test_toggle_carry() {
-        let mut alu = Alu::default();
-
-        alu.flags = 0b00_01_00_00;
+        let mut alu = Alu {
+            flags: 0b00_01_00_00,
+        };
         alu.toggle_carry(false);
 
         assert_eq!(alu.flags, 0b00_00_00_00);
@@ -375,9 +373,9 @@ mod test {
 
     #[test]
     fn test_toggle_zero() {
-        let mut alu = Alu::default();
-
-        alu.flags = 0b10_00_00_00;
+        let mut alu = Alu {
+            flags: 0b10_00_00_00,
+        };
 
         alu.toggle_zero(0x01);
         assert_eq!(alu.flags, 0b00_00_00_00);
@@ -395,9 +393,9 @@ mod test {
 
     #[test]
     fn test_check_flags() {
-        let mut alu = Alu::default();
-
-        alu.flags = 0b11_11_00_00;
+        let mut alu = Alu {
+            flags: 0b11_11_00_00,
+        };
 
         assert_eq!(alu.check_zero_flag(), true);
         assert_eq!(alu.check_negative_flag(), true);

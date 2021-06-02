@@ -11,11 +11,6 @@ pub struct Debugger {
     breakpoints: HashSet<u16>,
 }
 
-//TODO: Step Inside
-//TODO: Step Over
-//TODO: Change Flag
-//TODO: Conditional Breakpoints
-//TODO: Analyzing functionality ? i.e. reading whats in memory on that position and present it on the screen...
 pub enum DebuggerCommand {
     ToggleBreakpoint(u16),
     StepOver,
