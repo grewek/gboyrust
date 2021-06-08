@@ -19,11 +19,22 @@ use crossterm::{
 use debugger::{Debugger, DebuggerCommand};
 use disassembler::AssemblyDesc;
 
+//TODO: Get rid of crossterm and find a better way to make a ui !
 fn main() -> Result<()> {
     //let path = "test_roms/mooneye-tests/acceptance/bits/reg_f.gb";
     let args: Vec<String> = args().collect();
 
-    let path = "test_roms/cpu_instrs/individual/06-ld r,r.gb";
+    //let path = "test_roms/cpu_instrs/individual/01-special.gb"; //PASSED !
+    let path = "test_roms/cpu_instrs/individual/02-interrupts.gb";
+    //let path = "test_roms/cpu_instrs/individual/03-op sp,hl.gb"; //PASSED !
+    //let path = "test_roms/cpu_instrs/individual/04-op r,imm.gb"; //PASSED !
+    //let path = "test_roms/cpu_instrs/individual/05-op rp.gb"; //PASSED !
+    //let path = "test_roms/cpu_instrs/individual/06-ld r,r.gb"; //PASSED !
+    //let path = "test_roms/cpu_instrs/individual/07-jr,jp,call,ret,rst.gb"; //PASSED !
+    //let path = "test_roms/cpu_instrs/individual/08-misc instrs.gb"; //PASSED !
+    //let path = "test_roms/cpu_instrs/individual/09-op r,r.gb"; //PASSED !
+    //let path = "test_roms/cpu_instrs/individual/10-bit ops.gb"; //PASSED !
+    //let path = "test_roms/cpu_instrs/individual/11-op a,(hl).gb"; //PASSED !
     //let path = "test_roms/dmg_boot.bin";
 
     let mut file = File::open(path).unwrap();

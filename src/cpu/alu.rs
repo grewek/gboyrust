@@ -19,7 +19,49 @@ impl Default for Alu {
 }
 
 impl Alu {
-    pub fn shift_right_8(&mut self, a: u8) -> u8 {
+    pub fn unsigned_byte_to_bcd(&mut self, a: u8) -> u8 {
+        //NOTE: This is not my algorithm i translated eric haskins to a rust version the original can be found
+        //      at: https://ehaskins.com/2018-01-30%20Z80%20DAA/
+
+        let mut result = a;
+        let mut correction: i8 = 0;
+
+        if self.check_half_carry_flag() || !self.check_negative_flag() && (a & 0x0f) > 9 {
+            correction |= 0x06;
+        }
+
+        if self.check_carry_flag() || !self.check_negative_flag() && a > 0x99 {
+            correction |= 0x60;
+            self.set_carry();
+        }
+
+        result = if self.check_negative_flag() {
+            result.overflowing_add(-correction as u8).0
+        } else {
+            result.overflowing_add(correction as u8).0
+        };
+
+        result &= 0xFF;
+
+        self.toggle_zero(result);
+        self.clear_half_carry();
+
+        result
+    }
+    pub fn shift_right_arithmetic_8(&mut self, a: u8) -> u8 {
+        let carry = a & 0x01;
+        let seventh_bit = (a >> 7) & 0x01;
+        let result = (a >> 1) | (seventh_bit << 7);
+
+        self.toggle_zero(result);
+        self.clear_negative();
+        self.clear_half_carry();
+        self.toggle_carry(carry == 0x01);
+
+        result
+    }
+
+    pub fn shift_right_logic_8(&mut self, a: u8) -> u8 {
         let carry = a & 0x01;
         let result = a >> 1;
 
@@ -31,7 +73,19 @@ impl Alu {
         result
     }
 
-    pub fn rotate_right_8(&mut self, a: u8) -> u8 {
+    pub fn shift_left_8(&mut self, a: u8) -> u8 {
+        let carry = (a >> 7) & 0x01;
+        let result = a << 1;
+
+        self.toggle_zero(result);
+        self.clear_negative();
+        self.clear_half_carry();
+        self.toggle_carry(carry == 0x01);
+
+        result
+    }
+
+    pub fn rotate_right_8_carry(&mut self, a: u8) -> u8 {
         let carry = ((self.flags & CARRY_BIT_MASK) >> 4) & 0x01;
         let next_carry = a & 0x01;
         let mut result = a >> 1;
@@ -45,11 +99,36 @@ impl Alu {
         result
     }
 
+    pub fn rotate_left_8_carry(&mut self, a: u8) -> u8 {
+        let carry = ((self.flags & CARRY_BIT_MASK) >> 4) & 0x01;
+        let next_carry = (a >> 7) & 0x01;
+        let mut result = a << 1;
+        result |= carry;
+
+        self.clear_zero();
+        self.clear_negative();
+        self.clear_half_carry();
+        self.toggle_carry(next_carry == 0x01);
+
+        result
+    }
+
+    pub fn rotate_right_8(&mut self, a: u8) -> u8 {
+        let next_carry = a & 0x01;
+        let result = a.rotate_right(1);
+
+        self.toggle_zero(result);
+        self.clear_negative();
+        self.clear_half_carry();
+        self.toggle_carry(next_carry == 0x01);
+
+        result
+    }
     pub fn rotate_left_8(&mut self, a: u8) -> u8 {
         let next_carry = (a >> 7) & 0x01;
         let result = a.rotate_left(1);
 
-        self.clear_zero();
+        self.toggle_zero(result);
         self.clear_negative();
         self.clear_half_carry();
         self.toggle_carry(next_carry == 0x01);
@@ -90,14 +169,37 @@ impl Alu {
         result
     }
 
+    pub fn not_8(&mut self, a: u8) -> u8 {
+        let result = !a;
+
+        self.set_negative();
+        self.set_half_carry();
+
+        result
+    }
+
     pub fn add_16(&mut self, a: u16, b: u16) -> u16 {
         let (result, overflow) = a.overflowing_add(b);
 
         self.clear_negative();
         //TODO: Half Carry !
+        let carried_into_high_nybble = (a & 0x0FFF).overflowing_add(b & 0x0FFF).0;
+        self.toggle_half_carry(carried_into_high_nybble > 0x0FFF);
         self.toggle_carry(overflow);
 
         result
+    }
+
+    pub fn add_signed_byte_16(&mut self, a: u16, b: i8) -> u16 {
+        let (result, overflow) = (a as i16).overflowing_add(b as i16);
+
+        self.clear_negative();
+
+        let carried_into_high_nybble = ((a as i16) & 0x0FFF).overflowing_add((b as i16) & 0x0FFF).0;
+        self.toggle_half_carry(carried_into_high_nybble > 0x0FFF);
+        self.toggle_carry(overflow);
+
+        result as u16
     }
 
     pub fn adc_8(&mut self, a: u8, b: u8) -> u8 {
@@ -108,7 +210,10 @@ impl Alu {
 
         self.toggle_zero(result);
         self.clear_negative();
-        //TODO: Half Carry !
+
+        let carried_into_high_nybble = (a & 0x0F).overflowing_add(b & 0x0F).0 + carry;
+        self.toggle_half_carry(carried_into_high_nybble > 0x0F);
+
         self.toggle_carry(overflow_bc || overflow);
 
         result
@@ -119,7 +224,10 @@ impl Alu {
 
         self.toggle_zero(result);
         self.clear_negative();
-        //TODO: Half Carry !
+
+        let carried_into_high_nybble = (a & 0x0F).overflowing_add(b & 0x0F).0;
+        self.toggle_half_carry(carried_into_high_nybble > 0x0F);
+
         self.toggle_carry(overflow);
 
         result
@@ -133,7 +241,15 @@ impl Alu {
 
         self.toggle_zero(result);
         self.set_negative();
-        //TODO: Half Carry !
+
+        let carried_into_high_nybble = (a & 0x0F)
+            .overflowing_sub(b & 0x0F)
+            .0
+            .overflowing_sub(carry)
+            .0;
+
+        self.toggle_half_carry(carried_into_high_nybble > 0x0F);
+
         self.toggle_carry(overflow_bc || overflow);
 
         result
@@ -144,7 +260,10 @@ impl Alu {
 
         self.toggle_zero(result);
         self.set_negative();
-        //TODO: Half Carry
+
+        let carried_into_high_nybble = (a & 0x0F).overflowing_sub(b & 0x0F).0;
+        self.toggle_half_carry(carried_into_high_nybble > 0x0F);
+
         self.toggle_carry(overflow);
 
         result
@@ -158,6 +277,9 @@ impl Alu {
         let new = value.overflowing_add(1).0;
 
         //TODO: Half Carry
+        let carried_into_high_nybble = (value & 0x0F).overflowing_add(1).0;
+        self.toggle_half_carry(carried_into_high_nybble > 0x0F);
+
         self.toggle_zero(new);
         self.clear_negative();
         new
@@ -168,18 +290,22 @@ impl Alu {
 
         self.toggle_zero(result);
         self.set_negative();
-        //TODO: Half Carry !
+
+        let carried_into_high_nybble = (accu & 0x0F).overflowing_sub(value & 0x0F).0;
+        self.toggle_half_carry(carried_into_high_nybble > 0x0F);
+
         self.toggle_carry(overflow);
     }
 
-    fn toggle_carry(&mut self, overflowed: bool) {
+    pub fn toggle_carry(&mut self, overflowed: bool) {
         if overflowed {
             self.set_carry();
         } else {
             self.clear_carry();
         }
     }
-    fn toggle_zero(&mut self, value: u8) {
+
+    pub fn toggle_zero(&mut self, value: u8) {
         if value == 0x00 {
             self.set_zero();
         } else {
@@ -187,7 +313,15 @@ impl Alu {
         };
     }
 
-    fn clear_zero(&mut self) {
+    pub fn toggle_half_carry(&mut self, carried_into: bool) {
+        if carried_into {
+            self.set_half_carry();
+        } else {
+            self.clear_half_carry();
+        }
+    }
+
+    pub fn clear_zero(&mut self) {
         self.flags &= !ZERO_BIT_MASK;
     }
 
@@ -195,23 +329,23 @@ impl Alu {
         self.flags |= ZERO_BIT_MASK;
     }
 
-    fn set_carry(&mut self) {
+    pub fn set_carry(&mut self) {
         self.flags |= CARRY_BIT_MASK;
     }
 
-    fn clear_carry(&mut self) {
+    pub fn clear_carry(&mut self) {
         self.flags &= !CARRY_BIT_MASK;
     }
 
-    fn set_half_carry(&mut self) {
+    pub fn set_half_carry(&mut self) {
         self.flags |= HALF_CARRY_BIT_MASK;
     }
 
-    fn clear_half_carry(&mut self) {
+    pub fn clear_half_carry(&mut self) {
         self.flags &= !HALF_CARRY_BIT_MASK;
     }
 
-    fn clear_negative(&mut self) {
+    pub fn clear_negative(&mut self) {
         self.flags &= !NEGATIVE_BIT_MASK;
     }
 
@@ -242,6 +376,8 @@ impl Alu {
     pub fn dec_8(&mut self, value: u8) -> u8 {
         let new = value.overflowing_sub(1).0;
 
+        let carried_into_high_nybble = (value & 0x0f).overflowing_sub(1).0;
+        self.toggle_half_carry(carried_into_high_nybble > 0x0F);
         self.toggle_zero(new);
         self.set_negative();
         new
@@ -265,7 +401,7 @@ mod test {
         let mut alu = Alu::default();
         let value_zero = 0b00_00_00_00;
 
-        let result = alu.rotate_right_8(value_zero);
+        let result = alu.rotate_right_8_carry(value_zero);
         let flags = alu.flags();
 
         assert_eq!(result, 0b00_00_00_00);
@@ -273,61 +409,61 @@ mod test {
 
         let value_one = 0b00_00_00_01;
 
-        let result = alu.rotate_right_8(value_one);
+        let result = alu.rotate_right_8_carry(value_one);
         let flags = alu.flags();
 
         assert_eq!(result, 0b00_00_00_00);
         assert_eq!(flags, 0b00_01_00_00);
 
-        let result = alu.rotate_right_8(result);
+        let result = alu.rotate_right_8_carry(result);
         let flags = alu.flags();
 
         assert_eq!(result, 0b10_00_00_00);
         assert_eq!(flags, 0b00_00_00_00);
 
-        let result = alu.rotate_right_8(result);
+        let result = alu.rotate_right_8_carry(result);
         let flags = alu.flags();
 
         assert_eq!(result, 0b01_00_00_00);
         assert_eq!(flags, 0b00_00_00_00);
 
-        let result = alu.rotate_right_8(result);
+        let result = alu.rotate_right_8_carry(result);
         let flags = alu.flags();
 
         assert_eq!(result, 0b00_10_00_00);
         assert_eq!(flags, 0b00_00_00_00);
 
-        let result = alu.rotate_right_8(result);
+        let result = alu.rotate_right_8_carry(result);
         let flags = alu.flags();
 
         assert_eq!(result, 0b00_01_00_00);
         assert_eq!(flags, 0b00_00_00_00);
 
-        let result = alu.rotate_right_8(result);
+        let result = alu.rotate_right_8_carry(result);
         let flags = alu.flags();
 
         assert_eq!(result, 0b00_00_10_00);
         assert_eq!(flags, 0b00_00_00_00);
 
-        let result = alu.rotate_right_8(result);
+        let result = alu.rotate_right_8_carry(result);
         let flags = alu.flags();
 
         assert_eq!(result, 0b00_00_01_00);
         assert_eq!(flags, 0b00_00_00_00);
 
-        let result = alu.rotate_right_8(result);
+        let result = alu.rotate_right_8_carry(result);
         let flags = alu.flags();
 
         assert_eq!(result, 0b00_00_00_10);
         assert_eq!(flags, 0b00_00_00_00);
 
-        let result = alu.rotate_right_8(result);
+        let result = alu.rotate_right_8_carry(result);
         let flags = alu.flags();
 
         assert_eq!(result, 0b00_00_00_01);
         assert_eq!(flags, 0b00_00_00_00);
 
-        let result = alu.rotate_right_8(value_one);
+        let result = alu.rotate_right_8_carry(value_one);
         let flags = alu.flags();
 
         assert_eq!(result, 0b00_00_00_00);
@@ -343,7 +479,7 @@ mod test {
 
         alu.cp_8(0x80, 0xFF);
 
-        assert_eq!(alu.flags, 0b01_01_00_00);
+        assert_eq!(alu.flags, 0b01_11_00_00);
 
         alu.cp_8(0x79, 0x20);
 
