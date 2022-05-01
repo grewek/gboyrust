@@ -1,17 +1,21 @@
 mod cpu;
 mod debugger;
+mod debugger_view;
 mod disassembler;
 mod memory;
 
 
 use std::fs::File;
 use std::io::Read;
-
+use eframe::egui;
 use cpu::Cpu;
+use debugger_view::DebuggerView;
 
 
 //TODO: Get rid of crossterm and find a better way to make a ui !
 fn main() {
+    let native_options = eframe::NativeOptions::default();
+    
     //let path = "test_roms/mooneye-tests/acceptance/bits/reg_f.gb";
     //let path = "test_roms/cpu_instrs/individual/01-special.gb"; //PASSED !
     //let path = "test_roms/cpu_instrs/individual/02-interrupts.gb";
@@ -26,18 +30,18 @@ fn main() {
     //let path = "test_roms/cpu_instrs/individual/11-op a,(hl).gb"; //PASSED !
     //let path = "test_roms/dmg_boot.bin";
 
-    let mut file = File::open(path).unwrap();
-    let mut buffer = Vec::new();
+    //let mut file = File::open(path).unwrap();
+    //let mut buffer = Vec::new();
 
-    file.read_to_end(&mut buffer).unwrap();
+    //file.read_to_end(&mut buffer).unwrap();
 
-    let mut mem = memory::Memory::default();
-    mem.load_cartridge(&buffer);
+    //let mut mem = memory::Memory::default();
+    //mem.load_cartridge(&buffer);
 
+    eframe::run_native("My egui App", native_options, Box::new(|cc| Box::new(DebuggerView::new(cc))));
+    //let mut cpu = Cpu::default();
 
-    let mut cpu = Cpu::default();
-
-    loop {
-        cpu.cycle(&mut mem);
-    }
+    //loop {
+        //cpu.cycle(&mut mem);
+    //}
 }
