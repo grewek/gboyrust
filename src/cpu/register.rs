@@ -1,5 +1,3 @@
-use std::cell::Cell;
-
 pub struct Registers {
     a: u8,
     pub f: u8,
@@ -58,7 +56,7 @@ impl Registers {
             l: 0x00,
         }
     }
-    pub fn read_value16_from(&mut self, dest: RegWord) -> u16 {
+    pub fn read_value16_from(&self, dest: RegWord) -> u16 {
         //NOTE: This transforms our 16bit register into a tuple of a byte register pair
         let pair: RegisterPair = dest.into();
 
@@ -68,7 +66,7 @@ impl Registers {
         u16::from_le_bytes([lo_byte, hi_byte])
     }
 
-    pub fn read_value8_from(&mut self, dest: RegByte) -> u8 {
+    pub fn read_value8_from(&self, dest: RegByte) -> u8 {
         match dest {
             RegByte::A => self.a,
             RegByte::F => self.f,

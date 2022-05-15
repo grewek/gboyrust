@@ -1,7 +1,5 @@
 mod alu;
-mod register;
-
-use std::convert::TryInto;
+pub mod register;
 
 use crate::{
     cpu::register::{RegByte, RegWord},
@@ -12,7 +10,7 @@ use self::{alu::Alu, register::Registers};
 
 pub struct Cpu {
     alu: Alu,
-    regs: Registers,
+    pub regs: Registers,
     pub sp: u16,
     pub pc: u16,
 
@@ -25,7 +23,7 @@ impl Default for Cpu {
             alu: Alu::default(),
             regs: Registers::new(),
             sp: 0xFFFE,
-            pc: 0x0100,
+            pc: 0x0101,
 
             interrupts_enabled: false,
         }
@@ -53,14 +51,14 @@ impl Cpu {
         if vblank_ie == 0x01 && vblank_if == 0x01 {
             todo!();
 
-            let if_table = if_table & !(0x01);
+            let _if_table = if_table & !(0x01);
             self.interrupts_enabled = false;
         }
 
         if lcdstat_ie == 0x01 && lcdstat_if == 0x01 {
             todo!();
 
-            let if_table = if_table & !(0x01 << 1);
+            let _if_table = if_table & !(0x01 << 1);
             self.interrupts_enabled = false;
         }
 
@@ -80,6 +78,7 @@ impl Cpu {
             mem.write(0xFF0F, if_table);
 
             self.pc = jump_addr;
+            dbg!(self.pc);
             self.interrupts_enabled = false;
         }
 
@@ -87,13 +86,13 @@ impl Cpu {
             todo!();
 
             self.interrupts_enabled = false;
-            let if_table = if_table & !(0x01 << 3);
+            let _if_table = if_table & !(0x01 << 3);
         }
 
         if joypad_ie == 0x01 && joypad_if == 0x01 {
             todo!();
 
-            let if_table = if_table & !(0x01 << 4);
+            let _if_table = if_table & !(0x01 << 4);
             self.interrupts_enabled = false;
         }
     }
@@ -1355,7 +1354,7 @@ impl Cpu {
         let mask = (0x01 << bit_index) as u8;
         let result = value & !mask;
 
-        mem.write(ptr, result)
+        mem.write(ptr, result);
     }
 
     fn opcode_set(&mut self, dest: RegByte, bit_index: usize) {

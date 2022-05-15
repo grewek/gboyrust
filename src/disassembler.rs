@@ -1,5 +1,6 @@
+use crate::memory::Memory;
 use std::fmt::Display;
-
+#[derive(Copy, Clone)]
 pub struct AssemblyDesc {
     pub offset: u16,
     pub opcode: Opcode,
@@ -545,7 +546,7 @@ impl AssemblyDesc {
         }
     }
 
-    fn nop(offset: u16) -> AssemblyDesc {
+    pub fn nop(offset: u16) -> AssemblyDesc {
         AssemblyDesc {
             offset,
             opcode: Opcode::Nop,
@@ -895,11 +896,13 @@ impl AssemblyDesc {
         }
     }
 
-    pub fn disassemble(offset: u16, opcode: u8, arg_lo: u8, arg_hi: u8) -> AssemblyDesc {
+    pub fn disassemble(start_offset: u16, bytes: &[u8]) -> AssemblyDesc {
+        let opcode = bytes[0];
+
         if opcode != 0xCB {
-            AssemblyDesc::opcode_table_no_prefix(offset, opcode, arg_lo, arg_hi)
+            AssemblyDesc::opcode_table_no_prefix(start_offset, opcode, &bytes[1..bytes.len()])
         } else {
-            AssemblyDesc::opcode_table_prefix(offset, arg_lo)
+            AssemblyDesc::opcode_table_prefix(start_offset, opcode)
         }
     }
 
@@ -1014,14 +1017,18 @@ impl AssemblyDesc {
         }
     }
 
-    fn opcode_table_no_prefix(offset: u16, opcode: u8, arg_lo: u8, arg_hi: u8) -> AssemblyDesc {
-        let a = (arg_hi as u16) << 8 | arg_lo as u16;
+    fn arguments_to_16bit_value(arg_lo: u8, arg_hi: u8) -> u16 {
+        (arg_hi as u16) << 8 | arg_lo as u16
+    }
+
+    fn opcode_table_no_prefix(offset: u16, opcode: u8, bytes: &[u8]) -> AssemblyDesc {
+        //let a = (arg_hi as u16) << 8 | arg_lo as u16;
         match opcode {
             0x00 => AssemblyDesc::nop(offset),
             0x01 | 0x11 | 0x21 | 0x31 => AssemblyDesc::load_word_to_register(
                 offset,
                 Register::decode_16bit_register(opcode),
-                a,
+                Self::arguments_to_16bit_value(bytes[0], bytes[1]), //a,
             ),
             0x02 => AssemblyDesc::load_register_to_memory(offset, Register::Bc, Register::A),
             0x03 | 0x13 | 0x23 | 0x33 => {
@@ -1036,10 +1043,14 @@ impl AssemblyDesc {
             0x06 | 0x0E | 0x16 | 0x1E | 0x26 | 0x2E | 0x3E => AssemblyDesc::load_byte_to_register(
                 offset,
                 Register::decode_8bit_dest_register(opcode),
-                arg_lo,
+                bytes[0], //arg_lo,
             ),
             0x07 => AssemblyDesc::rlca(offset),
-            0x08 => AssemblyDesc::load_register_to_memory_addr(offset, a, Register::Sp),
+            0x08 => AssemblyDesc::load_register_to_memory_addr(
+                offset,
+                Self::arguments_to_16bit_value(bytes[0], bytes[1]), /*a*/
+                Register::Sp,
+            ),
             0x09 | 0x19 | 0x29 | 0x39 => AssemblyDesc::add_register_to_register(
                 offset,
                 Register::Hl,
@@ -1054,7 +1065,11 @@ impl AssemblyDesc {
             0x12 => AssemblyDesc::load_register_to_memory(offset, Register::De, Register::A),
             0x17 => AssemblyDesc::rla(offset),
             0x18 | 0x20 | 0x28 | 0x30 | 0x38 => {
-                AssemblyDesc::jump_relative(offset, Flag::decode_conditional(opcode), arg_lo)
+                AssemblyDesc::jump_relative(
+                    offset,
+                    Flag::decode_conditional(opcode),
+                    bytes[0], /*arg_lo*/
+                )
             }
             0x1A => AssemblyDesc::load_memory_to_register(offset, Register::A, Register::De),
             0x1F => AssemblyDesc::rra(offset),
@@ -1065,7 +1080,7 @@ impl AssemblyDesc {
             0x32 => AssemblyDesc::load_register_to_memory_dec(offset, Register::Hl, Register::A),
             0x34 => AssemblyDesc::inc_memory(offset, Register::Hl),
             0x35 => AssemblyDesc::dec_memory(offset, Register::Hl),
-            0x36 => AssemblyDesc::load_byte_to_memory(offset, Register::Hl, arg_lo),
+            0x36 => AssemblyDesc::load_byte_to_memory(offset, Register::Hl, bytes[0]),
             0x37 => AssemblyDesc::scf(offset),
             0x3A => AssemblyDesc::load_memory_to_register_dec(offset, Register::A, Register::Hl),
             0x3F => AssemblyDesc::ccf(offset),
@@ -1137,59 +1152,73 @@ impl AssemblyDesc {
             0xC1 | 0xD1 | 0xE1 | 0xF1 => {
                 AssemblyDesc::pop_register(offset, Register::decode_16bit_register(opcode))
             }
-            0xC2 | 0xC3 | 0xCA | 0xD2 | 0xDA => {
-                AssemblyDesc::jump(offset, Flag::decode_conditional(opcode), a)
-            }
-            0xC4 | 0xD4 | 0xCC | 0xDC | 0xCD => {
-                AssemblyDesc::call(offset, Flag::decode_conditional(opcode), a)
-            }
+            0xC2 | 0xC3 | 0xCA | 0xD2 | 0xDA => AssemblyDesc::jump(
+                offset,
+                Flag::decode_conditional(opcode),
+                Self::arguments_to_16bit_value(bytes[0], bytes[1]),
+            ),
+            0xC4 | 0xD4 | 0xCC | 0xDC | 0xCD => AssemblyDesc::call(
+                offset,
+                Flag::decode_conditional(opcode),
+                Self::arguments_to_16bit_value(bytes[0], bytes[1]),
+            ),
             0xC5 | 0xD5 | 0xE5 | 0xF5 => {
                 AssemblyDesc::push_register(offset, Register::decode_16bit_register(opcode))
             }
-            0xC6 => AssemblyDesc::add_byte_to_register(offset, Register::A, arg_lo),
+            0xC6 => AssemblyDesc::add_byte_to_register(offset, Register::A, bytes[0]),
             0xC7 => AssemblyDesc::rst_byte(offset, 0x00),
             0xC0 | 0xC8 | 0xC9 | 0xD0 | 0xD8 => {
                 AssemblyDesc::ret(offset, Flag::decode_conditional(opcode))
             }
             0xCB => AssemblyDesc::data_byte(offset, opcode),
-            0xCE => AssemblyDesc::adc_byte_to_register(offset, Register::A, arg_lo),
+            0xCE => AssemblyDesc::adc_byte_to_register(offset, Register::A, bytes[0]),
             0xCF => AssemblyDesc::rst_byte(offset, 0x08),
             0xD3 => AssemblyDesc::data_byte(offset, opcode),
-            0xD6 => AssemblyDesc::sub_byte(offset, arg_lo),
+            0xD6 => AssemblyDesc::sub_byte(offset, bytes[0]),
             0xD7 => AssemblyDesc::rst_byte(offset, 0x10),
             0xD9 => AssemblyDesc::reti(offset),
             0xDB => AssemblyDesc::data_byte(offset, opcode),
             0xDD => AssemblyDesc::data_byte(offset, opcode),
-            0xDE => AssemblyDesc::sbc_byte_to_register(offset, Register::A, arg_lo),
+            0xDE => AssemblyDesc::sbc_byte_to_register(offset, Register::A, bytes[0]),
             0xDF => AssemblyDesc::rst_byte(offset, 0x18),
-            0xE0 => AssemblyDesc::load_register_to_offset(offset, arg_lo as u8, Register::A),
+            0xE0 => AssemblyDesc::load_register_to_offset(offset, bytes[0] as u8, Register::A),
             0xE2 => AssemblyDesc::load_register_to_memory(offset, Register::C, Register::A),
             0xE3 => AssemblyDesc::data_byte(offset, opcode),
             0xE4 => AssemblyDesc::data_byte(offset, opcode),
-            0xE6 => AssemblyDesc::and_byte(offset, arg_lo),
+            0xE6 => AssemblyDesc::and_byte(offset, bytes[0]),
             0xE7 => AssemblyDesc::rst_byte(offset, 0x20),
-            0xE8 => AssemblyDesc::add_byte_to_register(offset, Register::Sp, arg_lo),
+            0xE8 => AssemblyDesc::add_byte_to_register(offset, Register::Sp, bytes[0]),
             0xE9 => AssemblyDesc::jump_register(offset, Register::Hl),
-            0xEA => AssemblyDesc::load_byte_to_address(offset, a, Register::A),
+            0xEA => AssemblyDesc::load_byte_to_address(
+                offset,
+                Self::arguments_to_16bit_value(bytes[0], bytes[1]),
+                Register::A,
+            ),
             0xEB => AssemblyDesc::data_byte(offset, opcode),
             0xEC => AssemblyDesc::data_byte(offset, opcode),
             0xED => AssemblyDesc::data_byte(offset, opcode),
-            0xEE => AssemblyDesc::xor_byte(offset, arg_lo),
+            0xEE => AssemblyDesc::xor_byte(offset, bytes[0]),
             0xEF => AssemblyDesc::rst_byte(offset, 0x28),
-            0xF0 => AssemblyDesc::load_offset_to_register(offset, Register::A, arg_lo as u16),
+            0xF0 => AssemblyDesc::load_offset_to_register(offset, Register::A, bytes[1] as u16),
             0xF2 => AssemblyDesc::load_memory_to_register(offset, Register::A, Register::A),
             0xF3 => AssemblyDesc::di(offset),
             0xF4 => AssemblyDesc::data_byte(offset, opcode),
-            0xF6 => AssemblyDesc::or_byte(offset, arg_lo),
+            0xF6 => AssemblyDesc::or_byte(offset, bytes[0]),
             0xF7 => AssemblyDesc::rst_byte(offset, 0x30),
-            0xF8 => {
-                AssemblyDesc::load_register_p_offset_to_register(offset, Register::Hl, arg_lo as i8)
-            }
-            0xFA => AssemblyDesc::load_address_to_register(offset, Register::A, a),
+            0xF8 => AssemblyDesc::load_register_p_offset_to_register(
+                offset,
+                Register::Hl,
+                bytes[0] as i8,
+            ),
+            0xFA => AssemblyDesc::load_address_to_register(
+                offset,
+                Register::A,
+                Self::arguments_to_16bit_value(bytes[0], bytes[1]),
+            ),
             0xFB => AssemblyDesc::ei(offset),
             0xFC => AssemblyDesc::data_byte(offset, opcode),
             0xFD => AssemblyDesc::data_byte(offset, opcode),
-            0xFE => AssemblyDesc::cp_byte(offset, arg_lo),
+            0xFE => AssemblyDesc::cp_byte(offset, bytes[0]),
             0xFF => AssemblyDesc::rst_byte(offset, 0x38),
         }
     }
@@ -1207,7 +1236,7 @@ impl Display for AssemblyDesc {
     }
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Copy, Clone)]
 pub enum Opcode {
     Byte,
     Load,
@@ -1258,55 +1287,55 @@ pub enum Opcode {
 impl Display for Opcode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Opcode::Byte => write!(f, ".byte"),
-            Opcode::Load => write!(f, "ld"),
-            Opcode::Add => write!(f, "add"),
-            Opcode::Adc => write!(f, "adc"),
-            Opcode::Sub => write!(f, "sub"),
-            Opcode::Sbc => write!(f, "sbc"),
-            Opcode::Inc => write!(f, "inc"),
-            Opcode::Dec => write!(f, "dec"),
-            Opcode::Push => write!(f, "push"),
-            Opcode::Pop => write!(f, "pop"),
-            Opcode::And => write!(f, "and"),
-            Opcode::Xor => write!(f, "xor"),
-            Opcode::Or => write!(f, "or"),
-            Opcode::Cp => write!(f, "cp"),
-            Opcode::Rlca => write!(f, "rlca"),
-            Opcode::Rrca => write!(f, "rrca"),
-            Opcode::Rla => write!(f, "rla"),
-            Opcode::Rra => write!(f, "rra"),
-            Opcode::Nop => write!(f, "nop"),
-            Opcode::Stop => write!(f, "stop"),
-            Opcode::Jr => write!(f, "jr"),
-            Opcode::Jp => write!(f, "jp"),
-            Opcode::Call => write!(f, "call"),
-            Opcode::Ret => write!(f, "ret"),
-            Opcode::Rst => write!(f, "rst"),
-            Opcode::Ei => write!(f, "ei"),
-            Opcode::Di => write!(f, "di"),
-            Opcode::Reti => write!(f, "reti"),
-            Opcode::Daa => write!(f, "daa"),
-            Opcode::Scf => write!(f, "scf"),
-            Opcode::Cpl => write!(f, "cpl"),
-            Opcode::Ccf => write!(f, "ccf"),
-            Opcode::Halt => write!(f, "halt"),
-            Opcode::Rlc => write!(f, "rlc"),
-            Opcode::Rrc => write!(f, "rrc"),
-            Opcode::Rl => write!(f, "rl"),
-            Opcode::Rr => write!(f, "rr"),
-            Opcode::Sla => write!(f, "sla"),
-            Opcode::Sra => write!(f, "sra"),
-            Opcode::Swap => write!(f, "swap"),
-            Opcode::Srl => write!(f, "srl"),
-            Opcode::Bit => write!(f, "bit"),
-            Opcode::Res => write!(f, "res"),
-            Opcode::Set => write!(f, "set"),
+            Opcode::Byte => write!(f, "BYTE"),
+            Opcode::Load => write!(f, "LD"),
+            Opcode::Add => write!(f, "ADD"),
+            Opcode::Adc => write!(f, "ADC"),
+            Opcode::Sub => write!(f, "SUB"),
+            Opcode::Sbc => write!(f, "SBC"),
+            Opcode::Inc => write!(f, "INC"),
+            Opcode::Dec => write!(f, "DEC"),
+            Opcode::Push => write!(f, "PUSH"),
+            Opcode::Pop => write!(f, "POP"),
+            Opcode::And => write!(f, "AND"),
+            Opcode::Xor => write!(f, "XOR"),
+            Opcode::Or => write!(f, "OR"),
+            Opcode::Cp => write!(f, "CP"),
+            Opcode::Rlca => write!(f, "RLCA"),
+            Opcode::Rrca => write!(f, "RRCA"),
+            Opcode::Rla => write!(f, "RLA"),
+            Opcode::Rra => write!(f, "RRA"),
+            Opcode::Nop => write!(f, "NOP"),
+            Opcode::Stop => write!(f, "STOP"),
+            Opcode::Jr => write!(f, "JR"),
+            Opcode::Jp => write!(f, "JP"),
+            Opcode::Call => write!(f, "CALL"),
+            Opcode::Ret => write!(f, "RET"),
+            Opcode::Rst => write!(f, "RST"),
+            Opcode::Ei => write!(f, "EI"),
+            Opcode::Di => write!(f, "DI"),
+            Opcode::Reti => write!(f, "RETI"),
+            Opcode::Daa => write!(f, "DAA"),
+            Opcode::Scf => write!(f, "SCF"),
+            Opcode::Cpl => write!(f, "CPL"),
+            Opcode::Ccf => write!(f, "CCF"),
+            Opcode::Halt => write!(f, "HALT"),
+            Opcode::Rlc => write!(f, "RLC"),
+            Opcode::Rrc => write!(f, "RRC"),
+            Opcode::Rl => write!(f, "RL"),
+            Opcode::Rr => write!(f, "RR"),
+            Opcode::Sla => write!(f, "SLA"),
+            Opcode::Sra => write!(f, "SRA"),
+            Opcode::Swap => write!(f, "SWAP"),
+            Opcode::Srl => write!(f, "SRL"),
+            Opcode::Bit => write!(f, "BIT"),
+            Opcode::Res => write!(f, "RES"),
+            Opcode::Set => write!(f, "SET"),
         }
     }
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Copy, Clone)]
 pub enum Argument {
     Unused,
 
@@ -1328,7 +1357,7 @@ pub enum Argument {
 impl Display for Argument {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Argument::Unused => write!(f, " "),
+            Argument::Unused => write!(f, ""),
             Argument::Data16(v) => write!(f, "${:04X}", v),
             Argument::Data8(v) => write!(f, "${:02X}", v),
             Argument::Address(v) => write!(f, "(${:04X})", v),
@@ -1338,13 +1367,13 @@ impl Display for Argument {
             Argument::IndexedBy(r) => write!(f, "({})", r),
             Argument::IncRegister(r) => write!(f, "({}+)", r),
             Argument::DecRegister(r) => write!(f, "({}-)", r),
-            Argument::Condition(fl) => write!(f, "{}", fl),
+            Argument::Condition(fl) => write!(f, "{},", fl),
             Argument::Bit(b) => write!(f, "{}", b),
         }
     }
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Copy, Clone)]
 pub enum Register {
     Af,
     Bc,
@@ -1412,24 +1441,24 @@ impl Register {
 impl Display for Register {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Register::Af => write!(f, "af"),
-            Register::Bc => write!(f, "bc"),
-            Register::De => write!(f, "de"),
-            Register::Hl => write!(f, "hl"),
-            Register::Sp => write!(f, "sp"),
-            Register::A => write!(f, "a"),
-            Register::F => write!(f, "f"),
-            Register::B => write!(f, "b"),
-            Register::C => write!(f, "c"),
-            Register::D => write!(f, "d"),
-            Register::E => write!(f, "e"),
-            Register::H => write!(f, "h"),
-            Register::L => write!(f, "l"),
+            Register::Af => write!(f, "AF"),
+            Register::Bc => write!(f, "BC"),
+            Register::De => write!(f, "DE"),
+            Register::Hl => write!(f, "HL"),
+            Register::Sp => write!(f, "SP"),
+            Register::A => write!(f, "A"),
+            Register::F => write!(f, "F"),
+            Register::B => write!(f, "B"),
+            Register::C => write!(f, "C"),
+            Register::D => write!(f, "D"),
+            Register::E => write!(f, "E"),
+            Register::H => write!(f, "H"),
+            Register::L => write!(f, "L"),
         }
     }
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Copy, Clone)]
 pub enum Flag {
     None,
     NotZero,
@@ -1472,10 +1501,10 @@ impl Display for Flag {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Flag::None => Ok(()),
-            Flag::NotZero => write!(f, "nz"),
-            Flag::Zero => write!(f, "z"),
-            Flag::NotCarry => write!(f, "nc"),
-            Flag::Carry => write!(f, "c"),
+            Flag::NotZero => write!(f, "NZ"),
+            Flag::Zero => write!(f, "Z"),
+            Flag::NotCarry => write!(f, "NC"),
+            Flag::Carry => write!(f, "C"),
         }
     }
 }
