@@ -897,10 +897,10 @@ impl AssemblyDesc {
     }
 
     pub fn disassemble(start_offset: u16, bytes: &[u8]) -> AssemblyDesc {
-        let opcode = bytes[0];
+        let opcode = bytes[start_offset as usize];
 
         if opcode != 0xCB {
-            AssemblyDesc::opcode_table_no_prefix(start_offset, opcode, &bytes[1..bytes.len()])
+            AssemblyDesc::opcode_table_no_prefix(start_offset, opcode, &bytes[((start_offset + 1) as usize)..])
         } else {
             AssemblyDesc::opcode_table_prefix(start_offset, opcode)
         }
@@ -1226,13 +1226,11 @@ impl AssemblyDesc {
 
 impl Display for AssemblyDesc {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let seperator = if self.dest == Argument::Unused {
-            ""
+        if self.dest == Argument::Unused || self.src == Argument::Unused {
+            writeln!(f, "{:04X}\t{}\t{}{}", self.offset, self.opcode, self.dest, self.src)
         } else {
-            ", "
-        };
-
-        writeln!(f, "{} {}{}{}", self.opcode, self.dest, seperator, self.src)
+            writeln!(f, "{:04X}\t{}\t{},{}", self.offset, self.opcode, self.dest, self.src)
+        }
     }
 }
 
@@ -1288,49 +1286,49 @@ impl Display for Opcode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Opcode::Byte => write!(f, "BYTE"),
-            Opcode::Load => write!(f, "LD"),
-            Opcode::Add => write!(f, "ADD"),
-            Opcode::Adc => write!(f, "ADC"),
-            Opcode::Sub => write!(f, "SUB"),
-            Opcode::Sbc => write!(f, "SBC"),
-            Opcode::Inc => write!(f, "INC"),
-            Opcode::Dec => write!(f, "DEC"),
+            Opcode::Load => write!(f, "LD  "),
+            Opcode::Add => write!(f, "ADD "),
+            Opcode::Adc => write!(f, "ADC "),
+            Opcode::Sub => write!(f, "SUB "),
+            Opcode::Sbc => write!(f, "SBC "),
+            Opcode::Inc => write!(f, "INC "),
+            Opcode::Dec => write!(f, "DEC "),
             Opcode::Push => write!(f, "PUSH"),
-            Opcode::Pop => write!(f, "POP"),
-            Opcode::And => write!(f, "AND"),
-            Opcode::Xor => write!(f, "XOR"),
-            Opcode::Or => write!(f, "OR"),
-            Opcode::Cp => write!(f, "CP"),
+            Opcode::Pop => write!(f, "POP "),
+            Opcode::And => write!(f, "AND "),
+            Opcode::Xor => write!(f, "XOR "),
+            Opcode::Or => write!(f, "OR  "),
+            Opcode::Cp => write!(f, "CP  "),
             Opcode::Rlca => write!(f, "RLCA"),
             Opcode::Rrca => write!(f, "RRCA"),
-            Opcode::Rla => write!(f, "RLA"),
-            Opcode::Rra => write!(f, "RRA"),
-            Opcode::Nop => write!(f, "NOP"),
+            Opcode::Rla => write!(f, "RLA "),
+            Opcode::Rra => write!(f, "RRA "),
+            Opcode::Nop => write!(f, "NOP "),
             Opcode::Stop => write!(f, "STOP"),
-            Opcode::Jr => write!(f, "JR"),
-            Opcode::Jp => write!(f, "JP"),
+            Opcode::Jr => write!(f, "JR  "),
+            Opcode::Jp => write!(f, "JP  "),
             Opcode::Call => write!(f, "CALL"),
-            Opcode::Ret => write!(f, "RET"),
-            Opcode::Rst => write!(f, "RST"),
-            Opcode::Ei => write!(f, "EI"),
-            Opcode::Di => write!(f, "DI"),
+            Opcode::Ret => write!(f, "RET "),
+            Opcode::Rst => write!(f, "RST "),
+            Opcode::Ei => write!(f, "EI  "),
+            Opcode::Di => write!(f, "DI  "),
             Opcode::Reti => write!(f, "RETI"),
-            Opcode::Daa => write!(f, "DAA"),
-            Opcode::Scf => write!(f, "SCF"),
-            Opcode::Cpl => write!(f, "CPL"),
-            Opcode::Ccf => write!(f, "CCF"),
+            Opcode::Daa => write!(f, "DAA "),
+            Opcode::Scf => write!(f, "SCF "),
+            Opcode::Cpl => write!(f, "CPL "),
+            Opcode::Ccf => write!(f, "CCF "),
             Opcode::Halt => write!(f, "HALT"),
-            Opcode::Rlc => write!(f, "RLC"),
-            Opcode::Rrc => write!(f, "RRC"),
-            Opcode::Rl => write!(f, "RL"),
-            Opcode::Rr => write!(f, "RR"),
-            Opcode::Sla => write!(f, "SLA"),
-            Opcode::Sra => write!(f, "SRA"),
+            Opcode::Rlc => write!(f, "RLC "),
+            Opcode::Rrc => write!(f, "RRC "),
+            Opcode::Rl => write!(f, "RL  "),
+            Opcode::Rr => write!(f, "RR  "),
+            Opcode::Sla => write!(f, "SLA "),
+            Opcode::Sra => write!(f, "SRA "),
             Opcode::Swap => write!(f, "SWAP"),
-            Opcode::Srl => write!(f, "SRL"),
-            Opcode::Bit => write!(f, "BIT"),
-            Opcode::Res => write!(f, "RES"),
-            Opcode::Set => write!(f, "SET"),
+            Opcode::Srl => write!(f, "SRL "),
+            Opcode::Bit => write!(f, "BIT "),
+            Opcode::Res => write!(f, "RES "),
+            Opcode::Set => write!(f, "SET "),
         }
     }
 }
@@ -1367,7 +1365,7 @@ impl Display for Argument {
             Argument::IndexedBy(r) => write!(f, "({})", r),
             Argument::IncRegister(r) => write!(f, "({}+)", r),
             Argument::DecRegister(r) => write!(f, "({}-)", r),
-            Argument::Condition(fl) => write!(f, "{},", fl),
+            Argument::Condition(fl) => write!(f, "{}", fl),
             Argument::Bit(b) => write!(f, "{}", b),
         }
     }

@@ -1,107 +1,163 @@
-use crate::debugger::Debugger;
-use crate::debugger::DisassemblyCache;
-use crate::debugger::MemoryLayout;
+use crate::{debugger::Debugger, cpu::register::{RegWord, RegByte}};
 use eframe::egui;
-use egui_extras::{Size, TableBuilder};
+use egui::Color32;
 //#[derive(Default)]
 pub struct DebuggerView {
-    selected: MemoryLayout,
     debugger: Debugger,
+    disassembly: Vec<(usize, String)>,
     font_size: f32,
 }
 
 impl DebuggerView {
-    pub fn new(_cc: &eframe::CreationContext<'_>, cartridge: &str) -> Self {
-        // Customize egui here with cc.egui_ctx.set_fonts and cc.egui_ctx.set_visuals.
-        // Restore app state using cc.storage (requires the "persistence" feature).
-        // Use the cc.gl (a glow::Context) to create graphics shaders and buffers that you can use
-        // for e.g. egui::PaintCallback.
-        _cc.egui_ctx.set_visuals(egui::Visuals {
+    pub fn new(cc: &eframe::CreationContext<'_>, cartridge: &str) -> Self {
+        cc.egui_ctx.set_visuals(egui::Visuals {
             dark_mode: true,
             ..egui::Visuals::default()
         });
 
         let mut view = Self {
-            selected: MemoryLayout::RomBankZero,
             debugger: Debugger::new(),
-            font_size: 24.0,
+            disassembly: vec![],
+            font_size: 18.0,
         };
 
         view.debugger.load_cartridge(cartridge);
-
+        view.debugger.disassemble(&mut view.disassembly);
+        
         view
+    }
+
+
+    fn generate_register_labels(&self, text: &str) -> egui::RichText {
+        egui::RichText::new(text)
+            .monospace()
+            .color(Color32::GOLD)
+            .size(self.font_size)
+            .underline()
+    }
+
+    fn generate_register_value_labels(&self, text: &str) -> egui::RichText {
+        egui::RichText::new(text)
+            .monospace()
+            .color(Color32::YELLOW)
+            .size(self.font_size)
+            .strong()
     }
 }
 
 impl eframe::App for DebuggerView {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.debugger.disassemble(&self.selected);
-        egui::TopBottomPanel::top("my_panel").show(ctx, |ui| {
-            egui::ComboBox::from_label("Region to Disassemble")
-                .selected_text(format!("{:?}", self.selected))
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(
-                        &mut self.selected,
-                        MemoryLayout::RomBankZero,
-                        "Rom Bank Zero",
-                    );
-                    ui.selectable_value(
-                        &mut self.selected,
-                        MemoryLayout::RomBankOne,
-                        "Rom Bank One",
-                    );
-                    ui.selectable_value(
-                        &mut self.selected,
-                        MemoryLayout::ExternalMemory,
-                        "External Memory",
-                    );
-                    ui.selectable_value(
-                        &mut self.selected,
-                        MemoryLayout::WorkingRamZero,
-                        "WRam Zero",
-                    );
-                    ui.selectable_value(
-                        &mut self.selected,
-                        MemoryLayout::WorkingRamOne,
-                        "WRam One",
-                    );
-                    ui.selectable_value(&mut self.selected, MemoryLayout::MirrorRam, "Mirror Ram");
-                });
+        if ctx.input().key_pressed(egui::Key::N) {
+            self.debugger.step()
+        }
+
+        if ctx.input().key_pressed(egui::Key::D) {
+            self.debugger.disassemble(&mut self.disassembly);
+        }
+
+
+        //Rigth panel will hold the current status of the cpu !
+        egui::SidePanel::right("cpu_status_pane").min_width(400.0).show(ctx, |ui| {
+            egui::Grid::new("Register State").show(ui, |ui| {
+                let register_label_af = self.generate_register_labels("AF:");
+                let register_label_bc = self.generate_register_labels("BC:");
+                let register_label_de = self.generate_register_labels("DE:");
+                let register_label_hl = self.generate_register_labels("HL:");
+
+                let register_label_a = self.generate_register_labels("A:");
+                let register_label_f = self.generate_register_labels("F:");
+                let register_label_b = self.generate_register_labels("B:");
+                let register_label_c = self.generate_register_labels("C:");
+                let register_label_d = self.generate_register_labels("D:");
+                let register_label_e = self.generate_register_labels("E:");
+                let register_label_h = self.generate_register_labels("H:");
+                let register_label_l = self.generate_register_labels("L:");
+
+                let register_label_sp = self.generate_register_labels("SP:");
+                let register_label_pc = self.generate_register_labels("PC:");
+
+                ui.label(register_label_af);
+                ui.label(self.generate_register_value_labels(&self.debugger.get_register_word(RegWord::Af)));
+                
+                ui.label("[ ");
+                ui.label(register_label_a);
+                ui.label(self.generate_register_value_labels(&self.debugger.get_register_byte(RegByte::A)));
+                ui.label(register_label_f);
+                ui.label(self.generate_register_value_labels(&self.debugger.get_register_byte(RegByte::F)));
+                ui.label(" ]");
+                ui.end_row();
+                
+                
+                ui.label(register_label_bc);
+                ui.label(self.generate_register_value_labels(&self.debugger.get_register_word(RegWord::Bc)));
+                
+                ui.label("[ ");
+                ui.label(register_label_b);
+                ui.label(self.generate_register_value_labels(&self.debugger.get_register_byte(RegByte::B)));
+                ui.label(register_label_c);
+                ui.label(self.generate_register_value_labels(&self.debugger.get_register_byte(RegByte::C)));
+                ui.label(" ]");
+                ui.end_row();
+
+                ui.label(register_label_de);
+                ui.label(self.generate_register_value_labels(&self.debugger.get_register_word(RegWord::De)));
+
+                ui.label("[ ");
+                ui.label(register_label_d);
+                ui.label(self.generate_register_value_labels(&self.debugger.get_register_byte(RegByte::D)));
+                ui.label(register_label_e);
+                ui.label(self.generate_register_value_labels(&self.debugger.get_register_byte(RegByte::E)));
+                ui.label(" ]");
+                ui.end_row();
+
+                ui.label(register_label_hl);
+                ui.label(self.generate_register_value_labels(&self.debugger.get_register_word(RegWord::Hl)));
+                
+                ui.label("[ ");
+                ui.label(register_label_h);
+                ui.label(self.generate_register_value_labels(&self.debugger.get_register_byte(RegByte::H)));
+                ui.label(register_label_l);
+                ui.label(self.generate_register_value_labels(&self.debugger.get_register_byte(RegByte::L)));
+                ui.label(" ]");
+                ui.end_row();
+
+                ui.label(register_label_sp);
+                ui.label(self.generate_register_value_labels(&self.debugger.get_sp_string()));
+                ui.end_row();
+
+                ui.label(register_label_pc);
+                ui.label(self.generate_register_value_labels(&self.debugger.get_pc_string()));
+                ui.end_row();
+            });
         });
 
+        //Central panel contains the disassembly
         egui::CentralPanel::default().show(ctx, |ui| {
-            // The central panel the region left after adding TopPanel's and SidePanel's
             let current_position = self.debugger.get_program_counter();
-            dbg!(current_position);
-            let disassembly = &self.debugger.get_disassembly(&self.selected);
+
             let row_height = self.font_size;
-            let total_rows = disassembly.len();
+            let total_rows = self.disassembly.len();
+
+            
+
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
                 .show_rows(ui, row_height, total_rows, |ui, row_range| {
                     egui::Grid::new("disassembly")
-                        .start_row(current_position) //TODO: Figure out why this function is not working as expected !
                         .show(ui, |ui| {
-                            for asm in &disassembly[row_range] {
-                                let offset_text = egui::RichText::new(&asm.offset)
-                                    .monospace()
-                                    .size(self.font_size);
-                                ui.label(offset_text);
+                            for (offset, instruction) in &self.disassembly[row_range] {
+                                let line_color = if *offset == current_position {
+                                    Color32::GREEN
+                                } else {
+                                    Color32::WHITE
+                                };
 
-                                let hexdump_text = egui::RichText::new(&asm.hexdump)
+                                let disassembly = egui::RichText::new(instruction)
                                     .monospace()
+                                    .color(line_color)
                                     .size(self.font_size);
-                                ui.label(hexdump_text);
-
-                                let opcode_text = egui::RichText::new(&asm.opcode)
-                                    .monospace()
-                                    .size(self.font_size);
-                                ui.label(opcode_text);
-                                ui.separator();
-                                let argument_text = egui::RichText::new(&asm.argument)
-                                    .monospace()
-                                    .size(self.font_size);
-                                ui.label(argument_text);
+                                
+                                ui.label(disassembly);
                                 ui.end_row();
                             }
                         })
