@@ -1,3 +1,4 @@
+#[derive(Debug)]
 pub struct Registers {
     a: u8,
     pub f: u8,
@@ -42,18 +43,18 @@ impl From<RegWord> for RegisterPair {
 }
 
 impl Registers {
-    pub fn new() -> Self {
+    pub fn new(a: u8, f: u8, b: u8, c: u8, d: u8, e: u8, h: u8, l: u8) -> Self {
         Self {
             //NOTE: Need to find out all the start up values of the cpu currently i only know that the
             //      a register is 1 at startup...
-            a: 0x01,
-            f: 0x00,
-            b: 0x00,
-            c: 0x00,
-            d: 0x00,
-            e: 0x00,
-            h: 0x00,
-            l: 0x00,
+            a,
+            f,
+            b,
+            c,
+            d,
+            e,
+            h,
+            l,
         }
     }
     pub fn read_value16_from(&self, dest: RegWord) -> u16 {
@@ -140,7 +141,7 @@ mod test {
 
     #[test]
     fn test_write_word_value_into_register() {
-        let mut regs = Registers::new();
+        let mut regs = Registers::new(0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
         let register_af = RegWord::Af;
 
         regs.write_value16_to(register_af, 0xFF80);
@@ -172,7 +173,7 @@ mod test {
 
     #[test]
     fn test_write_byte_into_register() {
-        let mut regs = Registers::new();
+        let mut regs = Registers::new(0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 
         let reg_a = RegByte::A;
         regs.write_value8_to(reg_a, 0x11);

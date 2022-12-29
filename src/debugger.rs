@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs::File, io::Read};
+use std::{collections::HashMap, collections::HashSet, fs::File, io::Read};
 
 use egui::Color32;
 
@@ -17,6 +17,7 @@ use crate::{cpu::{Cpu, register::{RegWord, RegByte}}, disassembler::AssemblyDesc
 pub struct Debugger {
     cpu: Cpu,
     memory: Memory,
+    breakpoints: HashSet<u16>,
 }
 
 impl Debugger {
@@ -24,6 +25,7 @@ impl Debugger {
         Self {
             cpu: Cpu::default(),
             memory: Memory::default(),
+            breakpoints: HashSet::new(),
         }
     }
 
@@ -35,20 +37,40 @@ impl Debugger {
         self.memory.load_cartridge(&buffer);
     }
 
-    pub fn disassemble(&self, disassembly_cache: &mut Vec<(usize, String)>) {
+    fn generate_hexdump(instr: &AssemblyDesc, memory: &[u8]) -> [Option<u8>; 3] {
+        let offset = instr.offset as usize;
+        match instr.size {
+            1 => [Some(memory[offset]), None, None],
+            2 => [Some(memory[offset]), Some(memory[offset + 1]), None],
+            3 => [Some(memory[offset]), Some(memory[offset + 1]), Some(memory[offset + 2])],
+            _ => panic!("Instruction size out of range!"),
+        }
+    }
+    pub fn disassemble(&self, disassembly_cache: &mut Vec<([Option<u8>; 3], AssemblyDesc)>, disassembly_map: &mut HashMap<u16, usize>) {
         disassembly_cache.clear();
-        let mut start = 0x0101;
+        let mut start = 0x0000;
         let memory = self.memory.get_mem_slice();
 
         while start < 0xFFFF {
             let instruction = AssemblyDesc::disassemble(start, memory);
-            
-            let offset = instruction.offset;
+
             start += instruction.size as u16;
 
-            let opcode = format!("{}", instruction);
-            disassembly_cache.push((offset as usize, opcode));
+            disassembly_cache.push((Self::generate_hexdump(&instruction, memory), instruction));
+            disassembly_map.insert(instruction.offset, disassembly_cache.len() - 1);
         }
+    }
+
+    pub fn toggle_breakpoint(&mut self, offset: u16) {
+        if self.is_registered_breakpoint(offset) {
+            self.breakpoints.remove(&offset);
+        } else {
+            self.breakpoints.insert(offset);
+        }
+    }
+
+    pub fn is_registered_breakpoint(&self, offset: u16) -> bool {
+        if self.breakpoints.contains(&offset) { true } else { false }
     }
 
     pub fn get_register_word(&self, reg: RegWord) -> String {
@@ -65,6 +87,18 @@ impl Debugger {
 
     pub fn get_sp_string(&self) -> String {
         format!("{:04X}", self.cpu.sp)
+    }
+
+    pub fn run(&mut self) {
+        //FIXME: If there is no breakpoint this loop is a infinite one and will
+        //       not return to the caller.
+        loop {
+            if self.breakpoints.contains(&(self.get_program_counter() as u16)) {
+                break;
+            }
+
+            self.cpu.cycle(&mut self.memory);
+        }
     }
 
     pub fn step(&mut self) {

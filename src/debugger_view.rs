@@ -1,11 +1,18 @@
 use crate::{debugger::Debugger, cpu::register::{RegWord, RegByte}};
 use eframe::egui;
-use egui::Color32;
+use egui::{Color32, RichText, Align};
+use egui_extras::{TableBuilder, Column};
+use std::collections::HashMap;
+
+use crate::disassembler::AssemblyDesc;
+
 //#[derive(Default)]
 pub struct DebuggerView {
     debugger: Debugger,
-    disassembly: Vec<(usize, String)>,
+    disassembly_map: HashMap<u16, usize>,
+    disassembly: Vec<([Option<u8>; 3], AssemblyDesc)>,
     font_size: f32,
+    selected_index: Option<usize>,
 }
 
 impl DebuggerView {
@@ -17,12 +24,14 @@ impl DebuggerView {
 
         let mut view = Self {
             debugger: Debugger::new(),
+            disassembly_map: HashMap::new(),
             disassembly: vec![],
             font_size: 18.0,
+            selected_index: None,
         };
 
         view.debugger.load_cartridge(cartridge);
-        view.debugger.disassemble(&mut view.disassembly);
+        view.debugger.disassemble(&mut view.disassembly, &mut view.disassembly_map);
         
         view
     }
@@ -47,14 +56,26 @@ impl DebuggerView {
 
 impl eframe::App for DebuggerView {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        if ctx.input().key_pressed(egui::Key::N) {
-            self.debugger.step()
+
+        if ctx.input().key_pressed(egui::Key::S) {
+            self.debugger.step();
+        }
+
+        if ctx.input().key_pressed(egui::Key::R) {
+            self.debugger.run();
+        }
+
+        if self.selected_index.is_some() {
+            let offset = self.disassembly[self.selected_index.unwrap()].1.offset;
+
+            if ctx.input().key_pressed(egui::Key::B) {
+                self.debugger.toggle_breakpoint(offset);
+            }
         }
 
         if ctx.input().key_pressed(egui::Key::D) {
-            self.debugger.disassemble(&mut self.disassembly);
+            self.debugger.disassemble(&mut self.disassembly, &mut self.disassembly_map);
         }
-
 
         //Rigth panel will hold the current status of the cpu !
         egui::SidePanel::right("cpu_status_pane").min_width(400.0).show(ctx, |ui| {
@@ -133,34 +154,108 @@ impl eframe::App for DebuggerView {
 
         //Central panel contains the disassembly
         egui::CentralPanel::default().show(ctx, |ui| {
-            let current_position = self.debugger.get_program_counter();
+            let mut table = TableBuilder::new(ui)
+                .striped(true)
+                .column(Column::initial(80.0))
+                .column(Column::initial(150.0))
+                .column(Column::initial(150.0))
+                .column(Column::initial(150.0))
+                .column(Column::remainder())
+                .resizable(true);
 
-            let row_height = self.font_size;
-            let total_rows = self.disassembly.len();
+            if ctx.input().key_pressed(egui::Key::Enter) && self.selected_index.is_some() {
+                let current_op = self.disassembly[self.selected_index.unwrap()].1;
 
-            
+                if let Some(address) = current_op.follow() {
+                    table = table.scroll_to_row(self.disassembly_map[&(address as u16)], Some(Align::Center));
+                }
+            }
 
-            egui::ScrollArea::vertical()
-                .auto_shrink([false, false])
-                .show_rows(ui, row_height, total_rows, |ui, row_range| {
-                    egui::Grid::new("disassembly")
-                        .show(ui, |ui| {
-                            for (offset, instruction) in &self.disassembly[row_range] {
-                                let line_color = if *offset == current_position {
-                                    Color32::GREEN
-                                } else {
-                                    Color32::WHITE
-                                };
+            if ctx.input().key_pressed(egui::Key::Backspace) {
+                table = table.scroll_to_row(self.disassembly_map[&(self.debugger.get_program_counter() as u16)], Some(Align::Center));
+            }
 
-                                let disassembly = egui::RichText::new(instruction)
-                                    .monospace()
-                                    .color(line_color)
-                                    .size(self.font_size);
-                                
-                                ui.label(disassembly);
-                                ui.end_row();
+            table
+            .header(20.0, |mut header| {
+                    header.col(|ui| {
+                        ui.heading("Offset");
+                    });
+
+                    header.col(|ui| {
+                        ui.heading("Hex Dump");
+                    });
+
+                    header.col(|ui| {
+                        ui.heading("Opcode Mnemoic");
+                    });
+
+                    //TODO: These columns don't feel "right" it's probably better to show the
+                    //      disassembly in a complete chunk instead of seperating it. I need to
+                    //      think about that more and probably make some visual tests
+                    header.col(|ui| {
+                        ui.heading("Dest Argument");
+                    });
+
+                    header.col(|ui| {
+                        ui.heading("Src Argument");
+                    });
+                })
+            .body(|mut body| {
+                    let row_height = 20.0;
+                    let row_count = self.disassembly.len();
+
+                    body.rows(row_height, row_count, |row_index, mut row| {
+                        let disassembly = &self.disassembly[row_index];
+
+                        let mut col = Color32::GRAY;
+                        
+                        if let Some(index) = self.selected_index {
+                            if index == row_index {
+                                col = Color32::GOLD;
                             }
-                        })
+                        }
+
+                        if self.debugger.is_registered_breakpoint(disassembly.1.offset) {
+                            col = Color32::RED;
+                        }
+
+                        if (disassembly.1.offset as usize) == self.debugger.get_program_counter() {
+                           col = Color32::GREEN; 
+                        }
+
+
+                        let offset_text = format!("{:04X}", disassembly.1.offset);
+                        let offset_label = RichText::new(&offset_text).color(col).size(self.font_size).monospace();
+
+                        let disassembly_text = format!("{}", disassembly.1.opcode);
+                        let dest_text = format!("{}", disassembly.1.dest);
+                        let src_text = format!("{}", disassembly.1.src);
+
+                        let disassembly_label = RichText::new(&disassembly_text).color(col).size(self.font_size).monospace();
+                        let dest_label = RichText::new(dest_text).color(col).size(self.font_size).monospace();
+                        let src_label = RichText::new(src_text).color(col).size(self.font_size).monospace();
+
+                        let (_, offset_response) = row.col(|ui| { ui.label(offset_label); });
+
+                        let dump = disassembly.0;
+                        let hexdump = match dump {
+                            [Some(op), None, None] => format!("{:02X}", op),
+                            [Some(op), Some(arg_a), None] => format!("{:02X} {:02X}", op, arg_a),
+                            [Some(op), Some(arg_a), Some(arg_b)] => format!("{:02X} {:02X} {:02X}", op, arg_a, arg_b),
+                            _ => panic!("malformed hexdump pattern"),
+                        };
+
+                        let hexdump_label = RichText::new(&hexdump).color(col).size(self.font_size).monospace();
+                        let (_, dump_response) = row.col(|ui| { ui.label(hexdump_label); });
+                        let (_, disasm_response) = row.col(|ui| { ui.label(disassembly_label); });
+                        let (_, dest_response) = row.col(|ui| { ui.label(dest_label); });
+                        let (_, src_response) = row.col(|ui| { ui.label(src_label); });
+
+                        if offset_response.hovered() || dump_response.hovered() || disasm_response.hovered() ||
+                           dest_response.hovered() || src_response.hovered() {
+                            self.selected_index = Some(row_index);
+                        }
+                    });
                 });
         });
     }

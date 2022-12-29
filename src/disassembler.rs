@@ -1,4 +1,3 @@
-use crate::memory::Memory;
 use std::fmt::Display;
 #[derive(Copy, Clone)]
 pub struct AssemblyDesc {
@@ -10,6 +9,18 @@ pub struct AssemblyDesc {
 }
 
 impl AssemblyDesc {
+    pub fn follow(&self) -> Option<usize> {
+        match self.opcode {
+            Opcode::Jr | Opcode::Jp | Opcode::Call => {
+                match self.src {
+                    Argument::Data8(offset) => Some(((self.offset as isize) + (offset as isize)) as usize),
+                    Argument::Data16(address) => Some(address as usize),
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    }
     fn inc_register(offset: u16, dest: Register) -> AssemblyDesc {
         AssemblyDesc {
             offset,

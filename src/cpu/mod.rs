@@ -6,10 +6,11 @@ use crate::{
     memory::Memory,
 };
 
-use self::{alu::Alu, register::Registers};
+use self::register::Registers;
+use self::alu::FlagState;
 
+#[derive(Debug)]
 pub struct Cpu {
-    alu: Alu,
     pub regs: Registers,
     pub sp: u16,
     pub pc: u16,
@@ -17,11 +18,24 @@ pub struct Cpu {
     interrupts_enabled: bool,
 }
 
+
+
+impl Cpu {
+    fn new(a: u8, b: u8, c: u8, d: u8, e: u8, f: u8, h: u8, l: u8, sp: u16, pc: u16) -> Self {
+        Self {
+            regs: Registers::new(a,b,c,d,e,f,h,l),
+            sp,
+            pc,
+
+            interrupts_enabled: false,
+        }
+    }
+}
+
 impl Default for Cpu {
     fn default() -> Self {
         Self {
-            alu: Alu::default(),
-            regs: Registers::new(),
+            regs: Registers::new(0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00),
             sp: 0xFFFE,
             pc: 0x0101,
 
@@ -640,11 +654,6 @@ impl Cpu {
                 _ => panic!("Please implement the opcode {:X}", opcode),
             }
 
-            //NOTE: I am not sure how to handle the flags in a better way, i thought about keeping it around
-            //      as a reference inside the alu, but rust disallows this via the strict borrowchecking rules...
-            //      so i either need to come up with a different way or i live with this little bit hackish way of
-            //      doing things. I also should be careful if i ever delete this line things will break horribly !
-            self.regs.write_value8_to(RegByte::F, self.alu.flags());
         }
     }
 
@@ -674,13 +683,18 @@ impl Cpu {
 
     fn opcode_daa(&mut self, dest: RegByte) {
         let value = self.regs.read_value8_from(dest);
+        let flags = self.regs.read_value8_from(RegByte::F);
 
-        let result = self.alu.unsigned_byte_to_bcd(value);
+        //let result = self.alu.unsigned_byte_to_bcd(value);
+        let (flags, result) = alu::unsigned_byte_to_bcd(flags, value);
 
         self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_add_sp_byte(&mut self, mem: &Memory) {
+        let flags = self.regs.read_value8_from(RegByte::F);
+
         let a = self.sp;
         let b: i8 = self.fetch_byte(mem) as i8;
 
@@ -689,15 +703,24 @@ impl Cpu {
         let result = (signed_sp).overflowing_add(signed_b);
 
         //NOTE: The flags get set by adding together the lowbyte of SP and the UNSIGNED immediate byte
-        let _ = self.alu.add_8(a as u8, b as u8);
+        //let _ = self.alu.add_8(a as u8, b as u8);
+        let (mut flags, _) = alu::add_8(flags, a as u8, b as u8);
 
-        self.alu.clear_zero();
-        self.alu.clear_negative();
+        flags = alu::change_flags(flags,
+                        FlagState::Clear,
+                        FlagState::Clear,
+                        FlagState::Untouched,
+                        FlagState::Untouched);
+        //self.alu.clear_zero();
+        //self.alu.clear_negative();
 
         self.sp = result.0 as u16;
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_add_sp_byte_to_register(&mut self, mem: &Memory, dest: RegWord) {
+        let flags = self.regs.read_value8_from(RegByte::F);
+
         let a = self.sp;
         let b = self.fetch_byte(mem) as i8;
 
@@ -706,12 +729,19 @@ impl Cpu {
         let result = (signed_sp).overflowing_add(signed_b);
 
         //NOTE: The flags get set by adding together the lowbyte of SP and the UNSIGNED immediate byte
-        let _ = self.alu.add_8(a as u8, b as u8);
+        //let _ = self.alu.add_8(a as u8, b as u8);
+        let (mut flags, _) = alu::add_8(flags, a as u8, b as u8);
 
-        self.alu.clear_zero();
-        self.alu.clear_negative();
+        flags = alu::change_flags(flags,
+                        FlagState::Clear,
+                        FlagState::Clear,
+                        FlagState::Untouched,
+                        FlagState::Untouched);
+        //self.alu.clear_zero();
+        //self.alu.clear_negative();
 
         self.regs.write_value16_to(dest, result.0 as u16);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_nop(&mut self) {}
@@ -729,82 +759,114 @@ impl Cpu {
     }
 
     fn opcode_rlca(&mut self, dest: RegByte) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let a = self.regs.read_value8_from(dest);
 
-        let result = self.alu.rotate_left_8(a);
+        //let result = self.alu.rotate_left_8(a);
+        let (mut flags, result) = alu::rotate_left_8(flags, a);
 
-        self.alu.clear_zero();
+        flags = alu::change_flags(flags,
+                        FlagState::Clear,
+                        FlagState::Untouched,
+                        FlagState::Untouched,
+                        FlagState::Untouched);
+        //self.alu.clear_zero();
 
         self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_rla(&mut self, dest: RegByte) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let a = self.regs.read_value8_from(dest);
 
-        let result = self.alu.rotate_left_8_carry(a);
+        //let result = self.alu.rotate_left_8_carry(a);
+        let (flags, result) = alu::rotate_right_8_carry(flags, a);
 
         self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_cp(&mut self, dest: RegByte, src: RegByte) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let a = self.regs.read_value8_from(dest);
         let b = self.regs.read_value8_from(src);
 
-        self.alu.cp_8(a, b);
+        //self.alu.cp_8(a, b);
+        let flags = alu::cp_8(flags, a, b);
+
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_cp_memory(&mut self, mem: &mut Memory, dest: RegByte, src: RegWord) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let a = self.regs.read_value8_from(dest);
         let ptr = self.regs.read_value16_from(src);
 
         let b = mem.read(ptr);
-        self.alu.cp_8(a, b);
+        //self.alu.cp_8(a, b);
+        let flags = alu::cp_8(flags, a, b);
+
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_cp_byte(&mut self, mem: &mut Memory, dest: RegByte) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let a = self.regs.read_value8_from(dest);
 
         let b = self.fetch_byte(mem);
-        self.alu.cp_8(a, b);
+        //self.alu.cp_8(a, b);
+        let flags = alu::cp_8(flags, a, b);
+
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_inc8(&mut self, dest: RegByte) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let value = self.regs.read_value8_from(dest);
 
-        let result = self.alu.inc_8(value);
+        //let result = self.alu.inc_8(value);
+        let (flags, result) = alu::inc_8(flags, value);
 
         self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_inc8_memory(&mut self, mem: &mut Memory, dest: RegWord) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let ptr = self.regs.read_value16_from(dest);
         let value = mem.read(ptr);
 
-        let result = self.alu.inc_8(value);
+        //let result = self.alu.inc_8(value);
+        let (flags, result) = alu::inc_8(flags, value);
 
         mem.write(ptr, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_inc16(&mut self, dest: RegWord) {
         let value = self.regs.read_value16_from(dest);
 
-        let result = self.alu.inc_16(value);
+        let result = alu::inc_16(value);
 
         self.regs.write_value16_to(dest, result);
     }
 
     fn opcode_dec8(&mut self, dest: RegByte) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let value = self.regs.read_value8_from(dest);
 
-        let result = self.alu.dec_8(value);
+        //let result = self.alu.dec_8(value);
+        let (flags, result) = alu::dec_8(flags, value);
 
         self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_dec16(&mut self, dest: RegWord) {
         let value = self.regs.read_value16_from(dest);
 
-        let result = self.alu.dec_16(value);
+        let result = alu::dec_16(value);
 
         self.regs.write_value16_to(dest, result);
     }
@@ -812,238 +874,308 @@ impl Cpu {
     fn opcode_dec_sp(&mut self) {
         let value = self.sp;
 
-        let result = self.alu.dec_16(value);
+        let result = alu::dec_16(value);
 
         self.sp = result;
     }
 
     fn opcode_dec_memory(&mut self, mem: &mut Memory, dest: RegWord) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let ptr = self.regs.read_value16_from(dest);
-
         let value = mem.read(ptr);
 
-        let result = self.alu.dec_8(value);
+        //let result = self.alu.dec_8(value);
+        let (flags, result) = alu::dec_8(flags, value);
 
         mem.write(ptr, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_or(&mut self, dest: RegByte, src: RegByte) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let a = self.regs.read_value8_from(dest);
         let b = self.regs.read_value8_from(src);
 
-        let result = self.alu.or_8(a, b);
+        //let result = self.alu.or_8(a, b);
+        let (flags, result) = alu::or_8(flags, a, b);
 
         self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_or_memory(&mut self, mem: &mut Memory, dest: RegByte, src: RegWord) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let a = self.regs.read_value8_from(dest);
         let ptr = self.regs.read_value16_from(src);
 
         let b = mem.read(ptr);
 
-        let result = self.alu.or_8(a, b);
+        //let result = self.alu.or_8(a, b);
+        let (flags, result) = alu::or_8(flags, a, b);
 
         self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_or_byte(&mut self, mem: &mut Memory, dest: RegByte) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let a = self.regs.read_value8_from(dest);
 
         let b = self.fetch_byte(mem);
 
-        let result = self.alu.or_8(a, b);
+        //let result = self.alu.or_8(a, b);
+        let (flags, result) = alu::or_8(flags, a, b);
 
         self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_xor(&mut self, dest: RegByte, src: RegByte) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let a = self.regs.read_value8_from(dest);
         let b = self.regs.read_value8_from(src);
 
-        let result = self.alu.xor_8(a, b);
+        //let result = self.alu.xor_8(a, b);
+        let (flags, result) = alu::xor_8(flags, a, b);
 
         self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_xor_memory(&mut self, mem: &mut Memory, dest: RegByte, src: RegWord) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let a = self.regs.read_value8_from(dest);
         let ptr = self.regs.read_value16_from(src);
 
         let b = mem.read(ptr);
 
-        let result = self.alu.xor_8(a, b);
+        //let result = self.alu.xor_8(a, b);
+        let (flags, result) = alu::xor_8(flags, a, b);
 
         self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_xor_byte(&mut self, mem: &mut Memory, dest: RegByte) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let a = self.regs.read_value8_from(dest);
         let b = self.fetch_byte(mem);
 
-        let result = self.alu.xor_8(a, b);
+        //let result = self.alu.xor_8(a, b);
+        let (flags, result) = alu::xor_8(flags, a, b);
 
         self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_and(&mut self, dest: RegByte, src: RegByte) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let a = self.regs.read_value8_from(dest);
         let b = self.regs.read_value8_from(src);
 
-        let result = self.alu.and_8(a, b);
+        //let result = self.alu.and_8(a, b);
+        let (flags, result) = alu::and_8(flags, a, b);
 
         self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_and_byte(&mut self, mem: &mut Memory, dest: RegByte) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let a = self.regs.read_value8_from(dest);
         let b = self.fetch_byte(mem);
 
-        let result = self.alu.and_8(a, b);
+        //let result = self.alu.and_8(a, b);
+        let (flags, result) = alu::and_8(flags, a, b);
 
         self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_and_memory(&mut self, mem: &mut Memory, dest: RegByte, src: RegWord) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let a = self.regs.read_value8_from(dest);
         let ptr = self.regs.read_value16_from(src);
         let b = mem.read(ptr);
 
-        let result = self.alu.and_8(a, b);
+        //let result = self.alu.and_8(a, b);
+        let (flags, result) = alu::and_8(flags, a, b);
 
         self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_adc(&mut self, dest: RegByte, src: RegByte) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let a = self.regs.read_value8_from(dest);
         let b = self.regs.read_value8_from(src);
 
-        let result = self.alu.adc_8(a, b);
+        //let result = self.alu.adc_8(a, b);
+        let (flags, result) = alu::adc_8(flags, a, b);
 
         self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_adc_byte(&mut self, mem: &mut Memory, dest: RegByte) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let a = self.regs.read_value8_from(dest);
         let b = self.fetch_byte(mem);
 
-        let result = self.alu.adc_8(a, b);
+        //let result = self.alu.adc_8(a, b);
+        let (flags, result) = alu::adc_8(flags, a, b);
 
         self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_adc_memory(&mut self, mem: &mut Memory, dest: RegByte, src: RegWord) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let a = self.regs.read_value8_from(dest);
         let ptr = self.regs.read_value16_from(src);
 
         let b = mem.read(ptr);
 
-        let result = self.alu.adc_8(a, b);
+        //let result = self.alu.adc_8(a, b);
+        let (flags, result) = alu::adc_8(flags, a, b);
 
         self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_add_register_word(&mut self, dest: RegWord, src: RegWord) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let a = self.regs.read_value16_from(dest);
         let b = self.regs.read_value16_from(src);
 
-        let result = self.alu.add_16(a, b);
+        let (flags, result) = alu::add_16(flags, a, b);
 
         self.regs.write_value16_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_add_register_sp(&mut self, dest: RegWord) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let a = self.regs.read_value16_from(dest);
         let b = self.sp;
 
-        let result = self.alu.add_16(a, b);
+        //let result = self.alu.add_16(a, b);
+        let (flags, result) = alu::add_16(flags, a, b);
 
         self.regs.write_value16_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_add_register_byte(&mut self, dest: RegByte, src: RegByte) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let a = self.regs.read_value8_from(dest);
         let b = self.regs.read_value8_from(src);
 
-        let result = self.alu.add_8(a, b);
+        //let result = self.alu.add_8(a, b);
+        let (flags, result) = alu::add_8(flags, a, b);
 
         self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_add_memory(&mut self, mem: &mut Memory, dest: RegByte, src: RegWord) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let a = self.regs.read_value8_from(dest);
         let ptr = self.regs.read_value16_from(src);
 
         let b = mem.read(ptr);
 
-        let result = self.alu.add_8(a, b);
+        //let result = self.alu.add_8(a, b);
+        let (flags, result) = alu::add_8(flags, a, b);
 
         self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_add_byte(&mut self, mem: &mut Memory, dest: RegByte) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let a = self.regs.read_value8_from(dest);
         let b = self.fetch_byte(mem);
 
-        let result = self.alu.add_8(a, b);
+        //let result = self.alu.add_8(a, b);
+        let (flags, result) = alu::add_8(flags, a, b);
 
         self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_sbc(&mut self, dest: RegByte, src: RegByte) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let a = self.regs.read_value8_from(dest);
         let b = self.regs.read_value8_from(src);
 
-        let result = self.alu.sbc_8(a, b);
+        //let result = self.alu.sbc_8(a, b);
+        let (flags, result) = alu::sbc_8(flags, a, b);
 
         self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_sbc_byte(&mut self, mem: &mut Memory, dest: RegByte) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let a = self.regs.read_value8_from(dest);
         let b = self.fetch_byte(mem);
 
-        let result = self.alu.sbc_8(a, b);
+        //let result = self.alu.sbc_8(a, b);
+        let (flags, result) = alu::sbc_8(flags, a, b);
 
         self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_sbc_memory(&mut self, mem: &mut Memory, dest: RegByte, src: RegWord) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let a = self.regs.read_value8_from(dest);
         let ptr = self.regs.read_value16_from(src);
         let b = mem.read(ptr);
 
-        let result = self.alu.sbc_8(a, b);
+        //let result = self.alu.sbc_8(a, b);
+        let (flags, result) = alu::sbc_8(flags, a, b);
 
         self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_sub(&mut self, dest: RegByte, src: RegByte) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let a = self.regs.read_value8_from(dest);
         let b = self.regs.read_value8_from(src);
 
-        let result = self.alu.sub_8(a, b);
+        //let result = self.alu.sub_8(a, b);
+        let (flags, result) = alu::sub_8(flags, a, b);
 
         self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_sub_byte(&mut self, mem: &mut Memory, dest: RegByte) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let a = self.regs.read_value8_from(dest);
         let b = self.fetch_byte(mem);
 
-        let result = self.alu.sub_8(a, b);
+        //let result = self.alu.sub_8(a, b);
+        let (flags, result) = alu::sub_8(flags, a, b);
 
         self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_sub_memory(&mut self, mem: &mut Memory, dest: RegByte, src: RegWord) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let a = self.regs.read_value8_from(dest);
         let ptr = self.regs.read_value16_from(src);
         let b = mem.read(ptr);
 
-        let result = self.alu.sub_8(a, b);
+        //let result = self.alu.sub_8(a, b);
+        let (flags, result) = alu::sub_8(flags, a, b);
 
         self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_ld_register_to_memory(&mut self, mem: &mut Memory, dest: RegWord, src: RegByte) {
@@ -1092,7 +1224,7 @@ impl Cpu {
         let addr = self.regs.read_value16_from(dest);
 
         mem.write(addr, value);
-        let result = self.alu.inc_16(addr);
+        let result = alu::inc_16(addr);
 
         self.regs.write_value16_to(dest, result);
     }
@@ -1102,7 +1234,7 @@ impl Cpu {
         let value = mem.read(addr);
 
         self.regs.write_value8_to(dest, value);
-        let result = self.alu.inc_16(addr);
+        let result = alu::inc_16(addr);
 
         self.regs.write_value16_to(src, result);
     }
@@ -1112,7 +1244,7 @@ impl Cpu {
         let addr = self.regs.read_value16_from(dest);
 
         mem.write(addr, value);
-        let result = self.alu.dec_16(addr);
+        let result = alu::dec_16(addr);
 
         self.regs.write_value16_to(dest, result);
     }
@@ -1123,7 +1255,7 @@ impl Cpu {
 
         self.regs.write_value8_to(dest, value);
 
-        let result = self.alu.dec_16(addr);
+        let result = alu::dec_16(addr);
 
         self.regs.write_value16_to(src, result);
     }
@@ -1179,121 +1311,172 @@ impl Cpu {
     }
 
     fn opcode_cpl(&mut self, dest: RegByte) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let value = self.regs.read_value8_from(dest);
 
         //TODO: Maybe look this up in the x86 docs to see if this is just a not
-        let complement = self.alu.not_8(value);
+        //let complement = self.alu.not_8(value);
+        let (flags, complement) = alu::not_8(flags, value);
 
         self.regs.write_value8_to(dest, complement);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_ccf(&mut self) {
-        self.alu.clear_negative();
-        self.alu.clear_half_carry();
+        let mut flags = self.regs.read_value8_from(RegByte::F);
 
-        if self.alu.check_carry_flag() {
-            self.alu.clear_carry();
+        if alu::check_carry_flag(flags) {
+            flags = alu::change_flags(flags,
+                            FlagState::Untouched,
+                            FlagState::Clear,
+                            FlagState::Clear,
+                            FlagState::Clear);
         } else {
-            self.alu.set_carry();
+            flags = alu::change_flags(flags,
+                            FlagState::Untouched,
+                            FlagState::Clear,
+                            FlagState::Clear,
+                            FlagState::Set);
         }
+
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_scf(&mut self) {
-        self.alu.clear_negative();
-        self.alu.clear_half_carry();
-        self.alu.set_carry();
+        let mut flags = self.regs.read_value8_from(RegByte::F);
+
+        flags = alu::change_flags(flags,
+                        FlagState::Untouched,
+                        FlagState::Clear,
+                        FlagState::Clear,
+                        FlagState::Set);
+
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_rrc(&mut self, dest: RegByte) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let a = self.regs.read_value8_from(dest);
 
-        let result = self.alu.rotate_right_8(a);
+        //let result = self.alu.rotate_right_8(a);
+        let (flags, result) = alu::rotate_right_8(flags, a);
 
         self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_rrc_memory(&mut self, mem: &mut Memory, dest: RegWord) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let ptr = self.regs.read_value16_from(dest);
         let value = mem.read(ptr);
 
-        let result = self.alu.rotate_right_8(value);
+        //let result = self.alu.rotate_right_8(value);
+        let (flags, result) = alu::rotate_right_8(flags, value);
 
         mem.write(ptr, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_rlc(&mut self, dest: RegByte) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let a = self.regs.read_value8_from(dest);
 
-        let result = self.alu.rotate_left_8(a);
+        //let result = self.alu.rotate_left_8(a);
+        let (flags, result) = alu::rotate_left_8(flags, a);
 
         self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_rlc_memory(&mut self, mem: &mut Memory, dest: RegWord) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let ptr = self.regs.read_value16_from(dest);
         let value = mem.read(ptr);
 
-        let result = self.alu.rotate_left_8(value);
+        //let result = self.alu.rotate_left_8(value);
+        let (flags, result) = alu::rotate_left_8(flags, value);
 
         mem.write(ptr, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_rl(&mut self, dest: RegByte) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let a = self.regs.read_value8_from(dest);
 
-        let result = self.alu.rotate_left_8_carry(a);
+        //let result = self.alu.rotate_left_8_carry(a);
+        let (flags, result) = alu::rotate_right_8_carry(flags, a);
 
-        self.alu.toggle_zero(result);
+        //self.alu.toggle_zero(result);
+        alu::toggle_zero(flags, result == 0x00);
 
         self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_rl_memory(&mut self, mem: &mut Memory, dest: RegWord) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let ptr = self.regs.read_value16_from(dest);
         let value = mem.read(ptr);
 
-        let result = self.alu.rotate_left_8_carry(value);
+        //let result = self.alu.rotate_left_8_carry(value);
+        let (flags, result) = alu::rotate_left_8_carry(flags, value);
 
-        self.alu.toggle_zero(result);
+        alu::toggle_zero(flags, result == 0x00);
+        //self.alu.toggle_zero(result);
 
         mem.write(ptr, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_sla(&mut self, dest: RegByte) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let a = self.regs.read_value8_from(dest);
 
-        let result = self.alu.shift_left_8(a);
+        //let result = self.alu.shift_left_8(a);
+        let (flags, result) = alu::shift_left_8(flags, a);
 
         self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_sla_memory(&mut self, mem: &mut Memory, dest: RegWord) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let ptr = self.regs.read_value16_from(dest);
         let value = mem.read(ptr);
 
-        let result = self.alu.shift_left_8(value);
+        //let result = self.alu.shift_left_8(value);
+        let (flags, result) = alu::shift_left_8(flags, value);
 
         mem.write(ptr, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_sra(&mut self, dest: RegByte) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let a = self.regs.read_value8_from(dest);
 
-        let result = self.alu.shift_right_arithmetic_8(a);
+        //let result = self.alu.shift_right_arithmetic_8(a);
+        let (flags, result) = alu::shift_right_arithmetic_8(flags, a);
 
         self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_sra_memory(&mut self, mem: &mut Memory, dest: RegWord) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let ptr = self.regs.read_value16_from(dest);
         let value = mem.read(ptr);
 
-        let result = self.alu.shift_right_arithmetic_8(value);
+        //let result = self.alu.shift_right_arithmetic_8(value);
+        let (flags, result) = alu::shift_right_arithmetic_8(flags, value);
 
         mem.write(ptr, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_bit(&mut self, dest: RegByte, bit_index: usize) {
+        let mut flags = self.regs.read_value8_from(RegByte::F);
         if bit_index >= 8 {
             panic!(
                 "Bit Index out of range tried to index {} in a 8 bit unsigned integer !",
@@ -1304,12 +1487,20 @@ impl Cpu {
         let value = self.regs.read_value8_from(dest);
         let bit_value = (value >> bit_index) & 0x01;
 
-        self.alu.toggle_zero(bit_value);
-        self.alu.clear_negative();
-        self.alu.set_half_carry();
+        //self.alu.toggle_zero(bit_value);
+        //self.alu.clear_negative();
+        //self.alu.set_half_carry();
+
+        flags = alu::change_flags(flags,
+                    FlagState::Toggle(bit_value == 0x00),
+                    FlagState::Clear,
+                    FlagState::Set,
+                    FlagState::Untouched);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_bit_memory(&mut self, mem: &mut Memory, dest: RegWord, bit_index: usize) {
+        let mut flags = self.regs.read_value8_from(RegByte::F);
         if bit_index >= 8 {
             panic!(
                 "Bit Index out of range tried to index {} in a 8 bit unsigned integer !",
@@ -1321,9 +1512,16 @@ impl Cpu {
         let value = mem.read(ptr);
         let bit_value = (value >> bit_index) & 0x01;
 
-        self.alu.toggle_zero(bit_value);
-        self.alu.clear_negative();
-        self.alu.set_half_carry();
+        //self.alu.toggle_zero(bit_value);
+        //self.alu.clear_negative();
+        //self.alu.set_half_carry();
+
+        flags = alu::change_flags(flags,
+                    FlagState::Toggle(bit_value == 0x00),
+                    FlagState::Clear,
+                    FlagState::Set,
+                    FlagState::Untouched);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_res(&mut self, dest: RegByte, bit_index: usize) {
@@ -1404,15 +1602,15 @@ impl Cpu {
         let hi_byte = mem.read(self.sp);
         self.sp += 1;
 
-        let value;
+        let value = ((hi_byte as u16) << 8) | (lo_byte) as u16;
 
-        if dest == RegWord::Af {
+        /*if dest == RegWord::Af {
             let lo_byte = lo_byte & 0xF0;
             value = ((hi_byte as u16) << 8) | (lo_byte) as u16;
             self.alu.restore_flags(lo_byte);
         } else {
             value = ((hi_byte as u16) << 8) | lo_byte as u16;
-        }
+        }*/
 
         self.regs.write_value16_to(dest, value);
     }
@@ -1423,33 +1621,37 @@ impl Cpu {
     }
 
     fn opcode_jp_nz(&mut self, mem: &mut Memory) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let addr = self.fetch_word(mem);
 
-        if !self.alu.check_zero_flag() {
+        if !alu::check_zero_flag(flags) {
             self.pc = addr;
         }
     }
 
     fn opcode_jp_z(&mut self, mem: &mut Memory) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let addr = self.fetch_word(mem);
 
-        if self.alu.check_zero_flag() {
+        if alu::check_zero_flag(flags) {
             self.pc = addr;
         }
     }
 
     fn opcode_jp_nc(&mut self, mem: &mut Memory) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let addr = self.fetch_word(mem);
 
-        if !self.alu.check_carry_flag() {
+        if !alu::check_carry_flag(flags) {
             self.pc = addr;
         }
     }
 
     fn opcode_jp_c(&mut self, mem: &mut Memory) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let addr = self.fetch_word(mem);
 
-        if self.alu.check_carry_flag() {
+        if alu::check_carry_flag(flags) {
             self.pc = addr;
         }
     }
@@ -1461,32 +1663,36 @@ impl Cpu {
     }
 
     fn opcode_jr_nz(&mut self, mem: &mut Memory) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let offset = self.fetch_byte(mem) as i8;
 
-        if !self.alu.check_zero_flag() {
+        if !alu::check_zero_flag(flags) {
             self.pc = (self.pc as i16).overflowing_add(offset as i16).0 as u16
         }
     }
 
     fn opcode_jr_z(&mut self, mem: &mut Memory) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let offset = self.fetch_byte(mem) as i8;
 
-        if self.alu.check_zero_flag() {
+        if alu::check_zero_flag(flags) {
             self.pc = (self.pc as i16).overflowing_add(offset as i16).0 as u16;
         }
     }
     fn opcode_jr_nc(&mut self, mem: &mut Memory) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let offset = self.fetch_byte(mem) as i8;
 
-        if !self.alu.check_carry_flag() {
+        if !alu::check_carry_flag(flags) {
             self.pc = (self.pc as i16).overflowing_add(offset as i16).0 as u16;
         }
     }
 
     fn opcode_jr_c(&mut self, mem: &mut Memory) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let offset = self.fetch_byte(mem) as i8;
 
-        if self.alu.check_carry_flag() {
+        if alu::check_carry_flag(flags) {
             self.pc = (self.pc as i16).overflowing_add(offset as i16).0 as u16;
         }
     }
@@ -1497,9 +1703,10 @@ impl Cpu {
     }
 
     fn opcode_call_nz(&mut self, mem: &mut Memory) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let addr = self.fetch_word(mem);
 
-        if !self.alu.check_zero_flag() {
+        if !alu::check_zero_flag(flags) {
             let lo_byte = self.pc as u8;
             let hi_byte = (self.pc >> 8) as u8;
 
@@ -1513,9 +1720,10 @@ impl Cpu {
     }
 
     fn opcode_call_z(&mut self, mem: &mut Memory) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let addr = self.fetch_word(mem);
 
-        if self.alu.check_zero_flag() {
+        if alu::check_zero_flag(flags) {
             let lo_byte = self.pc as u8;
             let hi_byte = (self.pc >> 8) as u8;
 
@@ -1529,9 +1737,10 @@ impl Cpu {
     }
 
     fn opcode_call_nc(&mut self, mem: &mut Memory) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let addr = self.fetch_word(mem);
 
-        if !self.alu.check_carry_flag() {
+        if !alu::check_carry_flag(flags) {
             let lo_byte = self.pc as u8;
             let hi_byte = (self.pc >> 8) as u8;
 
@@ -1545,9 +1754,10 @@ impl Cpu {
     }
 
     fn opcode_call_c(&mut self, mem: &mut Memory) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let addr = self.fetch_word(mem);
 
-        if self.alu.check_carry_flag() {
+        if alu::check_carry_flag(flags) {
             let lo_byte = self.pc as u8;
             let hi_byte = (self.pc >> 8) as u8;
 
@@ -1599,46 +1809,62 @@ impl Cpu {
     }
 
     fn opcode_rr(&mut self, dest: RegByte) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let a = self.regs.read_value8_from(dest);
 
-        let result = self.alu.rotate_right_8_carry(a);
+        //let result = self.alu.rotate_right_8_carry(a);
+        let (flags, result) = alu::rotate_right_8_carry(flags, a);
 
-        self.alu.toggle_zero(result);
+        //self.alu.toggle_zero(result);
+        alu::toggle_zero(flags, result == 0);
 
         self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_rr_memory(&mut self, mem: &mut Memory, dest: RegWord) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let ptr = self.regs.read_value16_from(dest);
         let value = mem.read(ptr);
 
-        let result = self.alu.rotate_right_8_carry(value);
+        //let result = self.alu.rotate_right_8_carry(value);
+        let (flags, result) = alu::rotate_right_8_carry(flags, value);
 
-        self.alu.toggle_zero(result);
+        //self.alu.toggle_zero(result);
+        alu::toggle_zero(flags, result == 0);
 
         mem.write(ptr, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_rra(&mut self, dest: RegByte) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let a = self.regs.read_value8_from(dest);
 
-        let result = self.alu.rotate_right_8_carry(a);
+        //let result = self.alu.rotate_right_8_carry(a);
+        let (flags, result) = alu::rotate_right_8_carry(flags, a);
 
         self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_rrca(&mut self, dest: RegByte) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let a = self.regs.read_value8_from(dest);
 
-        let result = self.alu.rotate_right_8(a);
+        //let result = self.alu.rotate_right_8(a);
+        let (flags, result) = alu::rotate_right_8(flags, a);
 
-        self.alu.clear_zero();
+        alu::clear_zero(flags);
+        //self.alu.clear_zero();
 
         self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_ret_nc(&mut self, mem: &mut Memory) {
-        if !self.alu.check_carry_flag() {
+        let flags = self.regs.read_value8_from(RegByte::F);
+        if !alu::check_carry_flag(flags) {
             let lo_byte = mem.read(self.sp);
             self.sp += 1;
             let hi_byte = mem.read(self.sp);
@@ -1649,7 +1875,8 @@ impl Cpu {
     }
 
     fn opcode_ret_c(&mut self, mem: &mut Memory) {
-        if self.alu.check_carry_flag() {
+        let flags = self.regs.read_value8_from(RegByte::F);
+        if alu::check_carry_flag(flags) {
             let lo_byte = mem.read(self.sp);
             self.sp += 1;
             let hi_byte = mem.read(self.sp);
@@ -1660,7 +1887,8 @@ impl Cpu {
     }
 
     fn opcode_ret_z(&mut self, mem: &mut Memory) {
-        if self.alu.check_zero_flag() {
+        let flags = self.regs.read_value8_from(RegByte::F);
+        if alu::check_zero_flag(flags) {
             let lo_byte = mem.read(self.sp);
             self.sp += 1;
             let hi_byte = mem.read(self.sp);
@@ -1672,7 +1900,8 @@ impl Cpu {
     }
 
     fn opcode_ret_nz(&mut self, mem: &mut Memory) {
-        if !self.alu.check_zero_flag() {
+        let flags = self.regs.read_value8_from(RegByte::F);
+        if !alu::check_zero_flag(flags) {
             let lo_byte = mem.read(self.sp);
             self.sp += 1;
             let hi_byte = mem.read(self.sp);
@@ -1711,6 +1940,7 @@ impl Cpu {
     }
 
     fn opcode_swap_register(&mut self, dest: RegByte) {
+        let mut flags = self.regs.read_value8_from(RegByte::F);
         let value: u8 = self.regs.read_value8_from(dest);
 
         let hi_byte: u8 = value & 0xF0;
@@ -1718,15 +1948,18 @@ impl Cpu {
 
         let result = lo_byte << 4 | hi_byte >> 4;
 
-        self.alu.toggle_zero(result);
-        self.alu.clear_negative();
-        self.alu.clear_half_carry();
-        self.alu.clear_carry();
+        flags = alu::change_flags(flags,
+                        FlagState::Toggle(result == 0x00),
+                        FlagState::Clear,
+                        FlagState::Clear,
+                        FlagState::Clear);
 
         self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_swap_memory(&mut self, mem: &mut Memory, dest: RegWord) {
+        let mut flags = self.regs.read_value8_from(RegByte::F);
         let ptr = self.regs.read_value16_from(dest);
         let value = mem.read(ptr);
 
@@ -1735,28 +1968,73 @@ impl Cpu {
 
         let result = lo_byte << 4 | hi_byte >> 4;
 
-        self.alu.toggle_zero(result);
-        self.alu.clear_negative();
-        self.alu.clear_half_carry();
-        self.alu.clear_carry();
+        flags = alu::change_flags(flags,
+                        FlagState::Toggle(result == 0x00),
+                        FlagState::Clear,
+                        FlagState::Clear,
+                        FlagState::Clear);
 
         mem.write(ptr, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_srl(&mut self, dest: RegByte) {
+        let flags = self.regs.read_value8_from(RegByte::F);
         let value = self.regs.read_value8_from(dest);
 
-        let result = self.alu.shift_right_logic_8(value);
+        //let result = self.alu.shift_right_logic_8(value);
+        let (flags, result) = alu::shift_right_logic_8(flags, value);
 
         self.regs.write_value8_to(dest, result);
+        self.regs.write_value8_to(RegByte::F, flags);
     }
 
     fn opcode_srl_memory(&mut self, mem: &mut Memory, dest: RegWord) {
+        let flags = self.regs.read_value8_from(RegByte::F);
+
         let ptr = self.regs.read_value16_from(dest);
         let value = mem.read(ptr);
 
-        let result = self.alu.shift_right_logic_8(value);
+        //let result = self.alu.shift_right_logic_8(value);
+        let (flags, result) = alu::shift_right_logic_8(flags, value);
 
         mem.write(ptr, result);
+        self.regs.write_value8_to(RegByte::F, flags);
+    }
+
+    fn mutate_flags(&mut self, z_flag: FlagState, n_flag: FlagState,
+                    h_flag: FlagState, c_flag: FlagState) {
+        let mut flags = self.regs.read_value8_from(RegByte::F);
+
+        flags = match z_flag {
+            FlagState::Toggle(result) => alu::toggle_zero(flags, result),
+            FlagState::Set => alu::set_zero(flags),
+            FlagState::Clear => alu::clear_zero(flags),
+            FlagState::Untouched => flags,
+        };
+
+        flags = match n_flag {
+            FlagState::Toggle(result) => alu::toggle_negative(flags, result),
+            FlagState::Set => alu::set_negative(flags),
+            FlagState::Clear => alu::clear_negative(flags),
+            FlagState::Untouched => flags,
+        };
+
+        flags = match h_flag {
+            FlagState::Toggle(result) => alu::toggle_half_carry(flags, result),
+            FlagState::Set => alu::set_half_carry(flags),
+            FlagState::Clear => alu::clear_half_carry(flags),
+            FlagState::Untouched => flags,
+        };
+
+        flags = match c_flag {
+            FlagState::Toggle(result) => alu::toggle_carry(flags, result),
+            FlagState::Set => alu::set_carry(flags),
+            FlagState::Clear => alu::clear_carry(flags),
+            FlagState::Untouched => flags,
+        };
+
+        self.regs.write_value8_to(RegByte::F, flags);
+
     }
 }

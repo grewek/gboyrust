@@ -6,11 +6,21 @@ mod memory;
 
 use std::fs::File;
 use std::io::Read;
+use std::env;
 
 use debugger_view::DebuggerView;
 
 //TODO: Get rid of crossterm and find a better way to make a ui !
 fn main() {
+    let mut args = env::args();
+
+    if args.len() < 2 {
+        println!("Usage: gboyrust <rompath>");
+        return;
+    }
+
+    let rom_path = args.nth(1).unwrap();
+
     let native_options = eframe::NativeOptions {
         initial_window_size: Some(egui::Vec2 {
             x: 1920.0,
@@ -43,13 +53,12 @@ fn main() {
     eframe::run_native(
         "My egui App",
         native_options,
-        Box::new(|cc| {
-            let path = "test_roms/cpu_instrs/individual/02-interrupts.gb";
+        Box::new(move |cc| {
             //let mut file = File::open(path).unwrap();
             //let mut buffer = Vec::new();
 
             //file.read_to_end(&mut buffer).unwrap();
-            Box::new(DebuggerView::new(cc, &path))
+            Box::new(DebuggerView::new(cc, &rom_path))
         }),
     );
     //let mut cpu = Cpu::default();
