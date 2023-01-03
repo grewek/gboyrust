@@ -15,12 +15,14 @@ pub enum FlagState {
     Untouched,
 }
 
-pub fn unsigned_byte_to_bcd(flags: u8, a: u8) -> (u8, u8) {
+pub fn unsigned_byte_to_bcd(mut flags: u8, a: u8) -> (u8, u8) {
     //NOTE: This is not my algorithm i translated eric haskins to a rust version the original can be found
     //      at: https://ehaskins.com/2018-01-30%20Z80%20DAA/
 
+    //TODO: Improve this
     let mut result = a;
     let mut correction: i8 = 0;
+    let mut carry_should_be_set = false;
 
     if check_half_carry_flag(flags) || !check_negative_flag(flags) && (a & 0x0f) > 9 {
         correction |= 0x06;
@@ -28,7 +30,7 @@ pub fn unsigned_byte_to_bcd(flags: u8, a: u8) -> (u8, u8) {
 
     if check_carry_flag(flags) || !check_negative_flag(flags) && a > 0x99 {
         correction |= 0x60;
-        set_carry(flags);
+        carry_should_be_set = true;
     }
 
     result = if check_negative_flag(flags) {
@@ -39,8 +41,12 @@ pub fn unsigned_byte_to_bcd(flags: u8, a: u8) -> (u8, u8) {
 
     result &= 0xFF;
 
-    toggle_zero(flags, result == 0x00);
-    clear_half_carry(flags);
+    flags = clear_zero(flags);
+    flags = clear_half_carry(flags);
+    flags = clear_carry(flags);
+    flags = toggle_zero(flags, result == 0x00);
+
+    flags = if carry_should_be_set { set_carry(flags) } else { flags };
 
     (flags, result)
 }
@@ -115,7 +121,7 @@ pub fn rotate_right_8(mut flags: u8, a: u8) -> (u8, u8) {
     let result = a.rotate_right(1);
 
     flags = change_flags(flags, 
-                FlagState::Toggle(result == 0x00), 
+                FlagState::Clear, 
                 FlagState::Clear, 
                 FlagState::Clear, 
                 FlagState::Toggle(next_carry == 0x01));
@@ -166,7 +172,7 @@ pub fn and_8(mut flags: u8, a: u8, b: u8) -> (u8, u8) {
     flags = change_flags(flags,
                 FlagState::Toggle(result == 0x00),
                 FlagState::Clear,
-                FlagState::Clear,
+                FlagState::Set,
                 FlagState::Clear);
 
     (flags, result)

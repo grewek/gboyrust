@@ -93,7 +93,7 @@ impl Registers {
     pub fn write_value8_to(&mut self, dest: RegByte, value: u8) {
         match dest {
             RegByte::A => self.a = value,
-            RegByte::F => self.f = value,
+            RegByte::F => self.f = value & 0xF0, //NOTE: The lower flag nybble is not writeable
             RegByte::B => self.b = value,
             RegByte::C => self.c = value,
             RegByte::D => self.d = value,

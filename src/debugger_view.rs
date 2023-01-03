@@ -96,6 +96,7 @@ impl eframe::App for DebuggerView {
 
                 let register_label_sp = self.generate_register_labels("SP:");
                 let register_label_pc = self.generate_register_labels("PC:");
+                let machine_cycles = self.generate_register_labels("CYCLES:");
 
                 ui.label(register_label_af);
                 ui.label(self.generate_register_value_labels(&self.debugger.get_register_word(RegWord::Af)));
@@ -149,6 +150,32 @@ impl eframe::App for DebuggerView {
                 ui.label(register_label_pc);
                 ui.label(self.generate_register_value_labels(&self.debugger.get_pc_string()));
                 ui.end_row();
+
+                ui.label(machine_cycles);
+                let cycles = format!("{}", &self.debugger.get_machine_cycles()); 
+                ui.label(self.generate_register_value_labels(&cycles));
+                ui.end_row();
+            });
+        });
+
+        egui::TopBottomPanel::bottom("call stack").min_height(240.0).show(ctx, |ui| {
+            ui.label("Here goes the call stack");
+            ui.label("And the stack itself");
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                egui::Grid::new("stack").show(ui, |ui| {
+                    for data in self.debugger.stack_data() {
+                        let data_fmt = if data.0 {
+                            format!("--> {:04X}: {:04X}", data.1, data.2)
+                        } else {
+                            format!("    {:04X}: {:04X}", data.1, data.2)
+                        };
+
+                        let data_label = self.generate_register_value_labels(&data_fmt);
+
+                        ui.label(data_label);
+                        ui.end_row();
+                    }
+                });
             });
         });
 
@@ -156,13 +183,12 @@ impl eframe::App for DebuggerView {
         egui::CentralPanel::default().show(ctx, |ui| {
             let mut table = TableBuilder::new(ui)
                 .striped(true)
+                .max_scroll_height(1280.0)
                 .column(Column::initial(80.0))
                 .column(Column::initial(150.0))
                 .column(Column::initial(150.0))
                 .column(Column::initial(150.0))
-                .column(Column::remainder())
-                .resizable(true);
-
+                .column(Column::remainder());
             if ctx.input().key_pressed(egui::Key::Enter) && self.selected_index.is_some() {
                 let current_op = self.disassembly[self.selected_index.unwrap()].1;
 
@@ -193,11 +219,11 @@ impl eframe::App for DebuggerView {
                     //      disassembly in a complete chunk instead of seperating it. I need to
                     //      think about that more and probably make some visual tests
                     header.col(|ui| {
-                        ui.heading("Dest Argument");
+                        ui.heading("Dest");
                     });
 
                     header.col(|ui| {
-                        ui.heading("Src Argument");
+                        ui.heading("Src");
                     });
                 })
             .body(|mut body| {

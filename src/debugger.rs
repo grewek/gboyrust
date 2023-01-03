@@ -61,6 +61,25 @@ impl Debugger {
         }
     }
 
+    pub fn stack_data(&self) -> Vec<(bool, u16, u16)> {
+        let mut result = Vec::new();
+
+        let lower_stack_bound = self.cpu.sp.saturating_sub(8);
+        let upper_stack_bound = self.cpu.sp.saturating_add(8);
+
+        for stackptr in (lower_stack_bound..upper_stack_bound).step_by(2) {
+            let low_byte = self.memory.read(stackptr as u16);
+            let high_byte = self.memory.read(stackptr + 1 as u16);
+
+            let word = (high_byte as u16) << 8 | low_byte as u16;
+            let top = self.cpu.sp == stackptr;
+
+            result.push((top, stackptr, word));
+        }
+
+        result
+    }
+
     pub fn toggle_breakpoint(&mut self, offset: u16) {
         if self.is_registered_breakpoint(offset) {
             self.breakpoints.remove(&offset);
@@ -107,5 +126,9 @@ impl Debugger {
 
     pub fn get_program_counter(&self) -> usize {
         self.cpu.pc as usize
+    }
+
+    pub fn get_machine_cycles(&self) -> usize {
+        self.cpu.machine_cycles
     }
 }

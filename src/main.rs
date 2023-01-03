@@ -10,7 +10,6 @@ use std::env;
 
 use debugger_view::DebuggerView;
 
-//TODO: Get rid of crossterm and find a better way to make a ui !
 fn main() {
     let mut args = env::args();
 
@@ -29,7 +28,9 @@ fn main() {
         ..eframe::NativeOptions::default()
     };
     //let path = "test_roms/mooneye-tests/acceptance/bits/reg_f.gb";
-    //let path = "test_roms/cpu_instrs/individual/01-special.gb"; //PASSED !
+    //let path = "test_roms/cpu_instrs/individual/01-special.gb"; // PASSED (Not quite sure the daa
+    //opcode seems to be tricky)
+
     //let path = "test_roms/cpu_instrs/individual/02-interrupts.gb";
     //let path = "test_roms/cpu_instrs/individual/03-op sp,hl.gb"; //PASSED !
     //let path = "test_roms/cpu_instrs/individual/04-op r,imm.gb"; //PASSED !

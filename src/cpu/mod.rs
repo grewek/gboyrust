@@ -14,6 +14,7 @@ pub struct Cpu {
     pub regs: Registers,
     pub sp: u16,
     pub pc: u16,
+    pub machine_cycles: usize,
 
     interrupts_enabled: bool,
 }
@@ -26,6 +27,7 @@ impl Cpu {
             regs: Registers::new(a,b,c,d,e,f,h,l),
             sp,
             pc,
+            machine_cycles: 0,
 
             interrupts_enabled: false,
         }
@@ -38,6 +40,7 @@ impl Default for Cpu {
             regs: Registers::new(0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00),
             sp: 0xFFFE,
             pc: 0x0101,
+            machine_cycles: 0,
 
             interrupts_enabled: false,
         }
@@ -657,19 +660,37 @@ impl Cpu {
         }
     }
 
+    fn advance_clock(&mut self, elapsed: usize) {
+        self.machine_cycles += elapsed;
+    }
+
+    fn write_byte(&mut self, mem: &mut Memory, addr: u16, value: u8) {
+        mem.write(addr, value);
+        self.advance_clock(1);
+    }
+
     fn fetch_word(&mut self, mem: &Memory) -> u16 {
         let lo_byte = mem.read(self.pc);
         self.pc += 1;
         let hi_byte = mem.read(self.pc);
         self.pc += 1;
+        self.advance_clock(2);
 
         (hi_byte as u16) << 8 | lo_byte as u16
+    }
+
+    fn read_byte(&mut self, mem: &Memory, addr: u16) -> u8 {
+        let value = mem.read(addr);
+        self.advance_clock(1);
+
+        value
     }
 
     fn fetch_byte(&mut self, mem: &Memory) -> u8 {
         let lo_byte = mem.read(self.pc);
         self.pc = self.pc.overflowing_add(1).0;
-
+        
+        self.advance_clock(1);
         lo_byte
     }
 
@@ -677,8 +698,9 @@ impl Cpu {
         self.interrupts_enabled = true;
     }
     fn opcode_stop(&mut self) {
-        //????? Sorry cpu i have no idea what you want me todo here ... must have something todo with it's amount of cycles
-        //i guess...
+        //TODO: This is opcode stopping the cpu until a interrupt is triggered ! Then execution is resumed
+        //      currently this is all information i have need to dig further to see how thats
+        //      supposed to work !
     }
 
     fn opcode_daa(&mut self, dest: RegByte) {
@@ -756,6 +778,8 @@ impl Cpu {
     fn opcode_ld_reg_to_stackptr(&mut self, src: RegWord) {
         let value = self.regs.read_value16_from(src);
         self.sp = value;
+
+        self.advance_clock(1);
     }
 
     fn opcode_rlca(&mut self, dest: RegByte) {
@@ -781,7 +805,7 @@ impl Cpu {
         let a = self.regs.read_value8_from(dest);
 
         //let result = self.alu.rotate_left_8_carry(a);
-        let (flags, result) = alu::rotate_right_8_carry(flags, a);
+        let (flags, result) = alu::rotate_left_8_carry(flags, a);
 
         self.regs.write_value8_to(dest, result);
         self.regs.write_value8_to(RegByte::F, flags);
@@ -803,7 +827,7 @@ impl Cpu {
         let a = self.regs.read_value8_from(dest);
         let ptr = self.regs.read_value16_from(src);
 
-        let b = mem.read(ptr);
+        let b = self.read_byte(mem, ptr);
         //self.alu.cp_8(a, b);
         let flags = alu::cp_8(flags, a, b);
 
@@ -835,12 +859,12 @@ impl Cpu {
     fn opcode_inc8_memory(&mut self, mem: &mut Memory, dest: RegWord) {
         let flags = self.regs.read_value8_from(RegByte::F);
         let ptr = self.regs.read_value16_from(dest);
-        let value = mem.read(ptr);
+        let value = self.read_byte(mem, ptr);
 
         //let result = self.alu.inc_8(value);
         let (flags, result) = alu::inc_8(flags, value);
 
-        mem.write(ptr, result);
+        self.write_byte(mem, ptr, result);
         self.regs.write_value8_to(RegByte::F, flags);
     }
 
@@ -882,12 +906,12 @@ impl Cpu {
     fn opcode_dec_memory(&mut self, mem: &mut Memory, dest: RegWord) {
         let flags = self.regs.read_value8_from(RegByte::F);
         let ptr = self.regs.read_value16_from(dest);
-        let value = mem.read(ptr);
+        let value = self.read_byte(mem, ptr);
 
         //let result = self.alu.dec_8(value);
         let (flags, result) = alu::dec_8(flags, value);
 
-        mem.write(ptr, result);
+        self.write_byte(mem, ptr, result);
         self.regs.write_value8_to(RegByte::F, flags);
     }
 
@@ -908,7 +932,7 @@ impl Cpu {
         let a = self.regs.read_value8_from(dest);
         let ptr = self.regs.read_value16_from(src);
 
-        let b = mem.read(ptr);
+        let b = self.read_byte(mem, ptr);
 
         //let result = self.alu.or_8(a, b);
         let (flags, result) = alu::or_8(flags, a, b);
@@ -947,7 +971,7 @@ impl Cpu {
         let a = self.regs.read_value8_from(dest);
         let ptr = self.regs.read_value16_from(src);
 
-        let b = mem.read(ptr);
+        let b = self.read_byte(mem, ptr);
 
         //let result = self.alu.xor_8(a, b);
         let (flags, result) = alu::xor_8(flags, a, b);
@@ -996,7 +1020,7 @@ impl Cpu {
         let flags = self.regs.read_value8_from(RegByte::F);
         let a = self.regs.read_value8_from(dest);
         let ptr = self.regs.read_value16_from(src);
-        let b = mem.read(ptr);
+        let b = self.read_byte(mem, ptr);
 
         //let result = self.alu.and_8(a, b);
         let (flags, result) = alu::and_8(flags, a, b);
@@ -1034,7 +1058,7 @@ impl Cpu {
         let a = self.regs.read_value8_from(dest);
         let ptr = self.regs.read_value16_from(src);
 
-        let b = mem.read(ptr);
+        let b = self.read_byte(mem, ptr);
 
         //let result = self.alu.adc_8(a, b);
         let (flags, result) = alu::adc_8(flags, a, b);
@@ -1083,7 +1107,7 @@ impl Cpu {
         let a = self.regs.read_value8_from(dest);
         let ptr = self.regs.read_value16_from(src);
 
-        let b = mem.read(ptr);
+        let b = self.read_byte(mem, ptr);
 
         //let result = self.alu.add_8(a, b);
         let (flags, result) = alu::add_8(flags, a, b);
@@ -1132,7 +1156,7 @@ impl Cpu {
         let flags = self.regs.read_value8_from(RegByte::F);
         let a = self.regs.read_value8_from(dest);
         let ptr = self.regs.read_value16_from(src);
-        let b = mem.read(ptr);
+        let b = self.read_byte(mem, ptr);
 
         //let result = self.alu.sbc_8(a, b);
         let (flags, result) = alu::sbc_8(flags, a, b);
@@ -1169,7 +1193,7 @@ impl Cpu {
         let flags = self.regs.read_value8_from(RegByte::F);
         let a = self.regs.read_value8_from(dest);
         let ptr = self.regs.read_value16_from(src);
-        let b = mem.read(ptr);
+        let b = self.read_byte(mem, ptr);
 
         //let result = self.alu.sub_8(a, b);
         let (flags, result) = alu::sub_8(flags, a, b);
@@ -1183,13 +1207,13 @@ impl Cpu {
 
         let value = self.regs.read_value8_from(src);
 
-        mem.write(addr, value);
+        self.write_byte(mem, addr, value);
     }
 
     fn opcode_ld_memory_to_register(&mut self, mem: &Memory, dest: RegByte, src: RegWord) {
         let addr = self.regs.read_value16_from(src);
 
-        let value = mem.read(addr);
+        let value = self.read_byte(mem, addr);
 
         self.regs.write_value8_to(dest, value);
     }
@@ -1210,20 +1234,21 @@ impl Cpu {
         let addr = self.regs.read_value16_from(dest);
         let value = self.fetch_byte(mem);
 
-        mem.write(addr, value);
+        self.write_byte(mem, addr, value);
     }
 
     fn opcode_ld_register_to_register(&mut self, dest: RegByte, src: RegByte) {
         let src = self.regs.read_value8_from(src);
-
         self.regs.write_value8_to(dest, src);
+
+        self.advance_clock(1);
     }
 
     fn opcode_ldi_register_to_memory(&mut self, mem: &mut Memory, dest: RegWord, src: RegByte) {
         let value = self.regs.read_value8_from(src);
         let addr = self.regs.read_value16_from(dest);
 
-        mem.write(addr, value);
+        self.write_byte(mem, addr, value);
         let result = alu::inc_16(addr);
 
         self.regs.write_value16_to(dest, result);
@@ -1231,7 +1256,7 @@ impl Cpu {
 
     fn opcode_ldi_memory_to_register(&mut self, mem: &mut Memory, dest: RegByte, src: RegWord) {
         let addr = self.regs.read_value16_from(src);
-        let value = mem.read(addr);
+        let value = self.read_byte(mem, addr);
 
         self.regs.write_value8_to(dest, value);
         let result = alu::inc_16(addr);
@@ -1243,7 +1268,7 @@ impl Cpu {
         let value = self.regs.read_value8_from(src);
         let addr = self.regs.read_value16_from(dest);
 
-        mem.write(addr, value);
+        self.write_byte(mem, addr, value);
         let result = alu::dec_16(addr);
 
         self.regs.write_value16_to(dest, result);
@@ -1251,7 +1276,7 @@ impl Cpu {
 
     fn opcode_ldd_memory_to_register(&mut self, mem: &mut Memory, dest: RegByte, src: RegWord) {
         let addr = self.regs.read_value16_from(src);
-        let value = mem.read(addr);
+        let value = self.read_byte(mem, addr);
 
         self.regs.write_value8_to(dest, value);
 
@@ -1264,7 +1289,7 @@ impl Cpu {
         let addr = self.fetch_word(mem);
         let value = self.regs.read_value8_from(src);
 
-        mem.write(addr, value);
+        self.write_byte(mem, addr, value);
     }
 
     fn opcode_ldh_register_to_address(&mut self, mem: &mut Memory, src: RegByte) {
@@ -1272,14 +1297,14 @@ impl Cpu {
         let addr = 0xFF00 + offset as u16;
         let value = self.regs.read_value8_from(src);
 
-        mem.write(addr, value);
+        self.write_byte(mem, addr, value);
     }
 
     fn opcode_ldh_address_to_register(&mut self, mem: &mut Memory, dest: RegByte) {
         let offset = self.regs.read_value8_from(RegByte::C);
         let addr = 0xFF00 + offset as u16;
 
-        let value = mem.read(addr);
+        let value = self.read_byte(mem, addr);
 
         self.regs.write_value8_to(dest, value);
     }
@@ -1290,22 +1315,21 @@ impl Cpu {
 
         let value = self.regs.read_value8_from(dest);
 
-        mem.write(addr, value);
+        self.write_byte(mem, addr, value);
     }
 
     fn opcode_ldh_offset_to_register(&mut self, mem: &mut Memory, dest: RegByte) {
         let offset = self.fetch_byte(mem);
         let addr = 0xFF00 + offset as u16;
 
-        let value = mem.read(addr);
+        let value = self.read_byte(mem, addr);
 
         self.regs.write_value8_to(dest, value);
     }
 
     fn opcode_ld_address_to_register(&mut self, mem: &mut Memory, dest: RegByte) {
         let addr = self.fetch_word(mem);
-
-        let value = mem.read(addr);
+        let value = self.read_byte(mem, addr);
 
         self.regs.write_value8_to(dest, value);
     }
@@ -1359,8 +1383,11 @@ impl Cpu {
         let a = self.regs.read_value8_from(dest);
 
         //let result = self.alu.rotate_right_8(a);
-        let (flags, result) = alu::rotate_right_8(flags, a);
+        //TODO: The flag operation in these result differ from opcode to opcode maybe we need
+        //      to split flag setting and operation up ?
+        let (mut flags, result) = alu::rotate_right_8(flags, a);
 
+        flags = alu::toggle_zero(flags, result == 0x00);
         self.regs.write_value8_to(dest, result);
         self.regs.write_value8_to(RegByte::F, flags);
     }
@@ -1368,12 +1395,12 @@ impl Cpu {
     fn opcode_rrc_memory(&mut self, mem: &mut Memory, dest: RegWord) {
         let flags = self.regs.read_value8_from(RegByte::F);
         let ptr = self.regs.read_value16_from(dest);
-        let value = mem.read(ptr);
+        let value = self.read_byte(mem, ptr);
 
         //let result = self.alu.rotate_right_8(value);
         let (flags, result) = alu::rotate_right_8(flags, value);
 
-        mem.write(ptr, result);
+        self.write_byte(mem, ptr, result);
         self.regs.write_value8_to(RegByte::F, flags);
     }
 
@@ -1391,12 +1418,12 @@ impl Cpu {
     fn opcode_rlc_memory(&mut self, mem: &mut Memory, dest: RegWord) {
         let flags = self.regs.read_value8_from(RegByte::F);
         let ptr = self.regs.read_value16_from(dest);
-        let value = mem.read(ptr);
+        let value = self.read_byte(mem, ptr);
 
         //let result = self.alu.rotate_left_8(value);
         let (flags, result) = alu::rotate_left_8(flags, value);
 
-        mem.write(ptr, result);
+        self.write_byte(mem, ptr, result);
         self.regs.write_value8_to(RegByte::F, flags);
     }
 
@@ -1405,10 +1432,10 @@ impl Cpu {
         let a = self.regs.read_value8_from(dest);
 
         //let result = self.alu.rotate_left_8_carry(a);
-        let (flags, result) = alu::rotate_right_8_carry(flags, a);
+        let (mut flags, result) = alu::rotate_left_8_carry(flags, a);
 
         //self.alu.toggle_zero(result);
-        alu::toggle_zero(flags, result == 0x00);
+        flags = alu::toggle_zero(flags, result == 0x00);
 
         self.regs.write_value8_to(dest, result);
         self.regs.write_value8_to(RegByte::F, flags);
@@ -1417,7 +1444,7 @@ impl Cpu {
     fn opcode_rl_memory(&mut self, mem: &mut Memory, dest: RegWord) {
         let flags = self.regs.read_value8_from(RegByte::F);
         let ptr = self.regs.read_value16_from(dest);
-        let value = mem.read(ptr);
+        let value = self.read_byte(mem, ptr);
 
         //let result = self.alu.rotate_left_8_carry(value);
         let (flags, result) = alu::rotate_left_8_carry(flags, value);
@@ -1425,7 +1452,7 @@ impl Cpu {
         alu::toggle_zero(flags, result == 0x00);
         //self.alu.toggle_zero(result);
 
-        mem.write(ptr, result);
+        self.write_byte(mem, ptr, result);
         self.regs.write_value8_to(RegByte::F, flags);
     }
 
@@ -1443,12 +1470,12 @@ impl Cpu {
     fn opcode_sla_memory(&mut self, mem: &mut Memory, dest: RegWord) {
         let flags = self.regs.read_value8_from(RegByte::F);
         let ptr = self.regs.read_value16_from(dest);
-        let value = mem.read(ptr);
+        let value = self.read_byte(mem, ptr);
 
         //let result = self.alu.shift_left_8(value);
         let (flags, result) = alu::shift_left_8(flags, value);
 
-        mem.write(ptr, result);
+        self.write_byte(mem, ptr, result);
         self.regs.write_value8_to(RegByte::F, flags);
     }
 
@@ -1466,12 +1493,12 @@ impl Cpu {
     fn opcode_sra_memory(&mut self, mem: &mut Memory, dest: RegWord) {
         let flags = self.regs.read_value8_from(RegByte::F);
         let ptr = self.regs.read_value16_from(dest);
-        let value = mem.read(ptr);
+        let value = self.read_byte(mem, ptr);
 
         //let result = self.alu.shift_right_arithmetic_8(value);
         let (flags, result) = alu::shift_right_arithmetic_8(flags, value);
 
-        mem.write(ptr, result);
+        self.write_byte(mem, ptr, result);
         self.regs.write_value8_to(RegByte::F, flags);
     }
 
@@ -1509,7 +1536,7 @@ impl Cpu {
         }
 
         let ptr = self.regs.read_value16_from(dest);
-        let value = mem.read(ptr);
+        let value = self.read_byte(mem, ptr);
         let bit_value = (value >> bit_index) & 0x01;
 
         //self.alu.toggle_zero(bit_value);
@@ -1548,11 +1575,11 @@ impl Cpu {
         }
 
         let ptr = self.regs.read_value16_from(dest);
-        let value = mem.read(ptr);
+        let value = self.read_byte(mem, ptr);
         let mask = (0x01 << bit_index) as u8;
         let result = value & !mask;
 
-        mem.write(ptr, result);
+        self.write_byte(mem, ptr, result);
     }
 
     fn opcode_set(&mut self, dest: RegByte, bit_index: usize) {
@@ -1579,45 +1606,41 @@ impl Cpu {
         }
 
         let ptr = self.regs.read_value16_from(dest);
-        let value = mem.read(ptr);
+        let value = self.read_byte(mem, ptr);
         let mask = (0x01 << bit_index) as u8;
         let result = value | mask;
 
-        mem.write(ptr, result);
+        self.write_byte(mem, ptr, result);
     }
     fn opcode_push(&mut self, mem: &mut Memory, src: RegWord) {
         let value: u16 = self.regs.read_value16_from(src);
 
         let hi_byte = (value >> 8) as u8;
         let lo_byte = value as u8;
+
+        self.advance_clock(1);
+
         self.sp -= 1;
-        mem.write(self.sp, hi_byte);
+        self.write_byte(mem, self.sp, hi_byte);
         self.sp -= 1;
-        mem.write(self.sp, lo_byte);
+        self.write_byte(mem, self.sp, lo_byte);
     }
 
     fn opcode_pop(&mut self, mem: &mut Memory, dest: RegWord) {
-        let lo_byte = mem.read(self.sp);
+        let lo_byte = self.read_byte(mem, self.sp);
         self.sp += 1;
-        let hi_byte = mem.read(self.sp);
+        let hi_byte = self.read_byte(mem, self.sp);
         self.sp += 1;
 
         let value = ((hi_byte as u16) << 8) | (lo_byte) as u16;
-
-        /*if dest == RegWord::Af {
-            let lo_byte = lo_byte & 0xF0;
-            value = ((hi_byte as u16) << 8) | (lo_byte) as u16;
-            self.alu.restore_flags(lo_byte);
-        } else {
-            value = ((hi_byte as u16) << 8) | lo_byte as u16;
-        }*/
-
         self.regs.write_value16_to(dest, value);
     }
 
     fn opcode_jp(&mut self, mem: &mut Memory) {
         let addr = self.fetch_word(mem);
         self.pc = addr;
+
+        self.advance_clock(1);
     }
 
     fn opcode_jp_nz(&mut self, mem: &mut Memory) {
@@ -1626,6 +1649,7 @@ impl Cpu {
 
         if !alu::check_zero_flag(flags) {
             self.pc = addr;
+            self.advance_clock(1);
         }
     }
 
@@ -1635,6 +1659,7 @@ impl Cpu {
 
         if alu::check_zero_flag(flags) {
             self.pc = addr;
+            self.advance_clock(1);
         }
     }
 
@@ -1644,6 +1669,7 @@ impl Cpu {
 
         if !alu::check_carry_flag(flags) {
             self.pc = addr;
+            self.advance_clock(1);
         }
     }
 
@@ -1653,13 +1679,14 @@ impl Cpu {
 
         if alu::check_carry_flag(flags) {
             self.pc = addr;
+            self.advance_clock(1);
         }
     }
 
     fn opcode_jr(&mut self, mem: &mut Memory) {
         let offset = self.fetch_byte(mem) as i8;
-
-        self.pc = (self.pc as i16).overflowing_add(offset as i16).0 as u16
+        self.pc = (self.pc as i16).overflowing_add(offset as i16).0 as u16;
+        self.advance_clock(1);
     }
 
     fn opcode_jr_nz(&mut self, mem: &mut Memory) {
@@ -1667,7 +1694,8 @@ impl Cpu {
         let offset = self.fetch_byte(mem) as i8;
 
         if !alu::check_zero_flag(flags) {
-            self.pc = (self.pc as i16).overflowing_add(offset as i16).0 as u16
+            self.pc = (self.pc as i16).overflowing_add(offset as i16).0 as u16;
+            self.advance_clock(1);
         }
     }
 
@@ -1677,6 +1705,7 @@ impl Cpu {
 
         if alu::check_zero_flag(flags) {
             self.pc = (self.pc as i16).overflowing_add(offset as i16).0 as u16;
+            self.advance_clock(1);
         }
     }
     fn opcode_jr_nc(&mut self, mem: &mut Memory) {
@@ -1685,6 +1714,7 @@ impl Cpu {
 
         if !alu::check_carry_flag(flags) {
             self.pc = (self.pc as i16).overflowing_add(offset as i16).0 as u16;
+            self.advance_clock(1);
         }
     }
 
@@ -1694,6 +1724,7 @@ impl Cpu {
 
         if alu::check_carry_flag(flags) {
             self.pc = (self.pc as i16).overflowing_add(offset as i16).0 as u16;
+            self.advance_clock(1);
         }
     }
 
@@ -1710,10 +1741,12 @@ impl Cpu {
             let lo_byte = self.pc as u8;
             let hi_byte = (self.pc >> 8) as u8;
 
+            self.advance_clock(1);
+
             self.sp -= 1;
-            mem.write(self.sp, hi_byte);
+            self.write_byte(mem, self.sp, hi_byte);
             self.sp -= 1;
-            mem.write(self.sp, lo_byte);
+            self.write_byte(mem, self.sp, lo_byte);
 
             self.pc = addr;
         }
@@ -1727,10 +1760,12 @@ impl Cpu {
             let lo_byte = self.pc as u8;
             let hi_byte = (self.pc >> 8) as u8;
 
+            self.advance_clock(1);
+
             self.sp -= 1;
-            mem.write(self.sp, hi_byte);
+            self.write_byte(mem, self.sp, hi_byte);
             self.sp -= 1;
-            mem.write(self.sp, lo_byte);
+            self.write_byte(mem, self.sp, lo_byte);
 
             self.pc = addr;
         }
@@ -1744,10 +1779,12 @@ impl Cpu {
             let lo_byte = self.pc as u8;
             let hi_byte = (self.pc >> 8) as u8;
 
+            self.advance_clock(1);
+
             self.sp -= 1;
-            mem.write(self.sp, hi_byte);
+            self.write_byte(mem, self.sp, hi_byte);
             self.sp -= 1;
-            mem.write(self.sp, lo_byte);
+            self.write_byte(mem, self.sp, lo_byte);
 
             self.pc = addr;
         }
@@ -1761,10 +1798,12 @@ impl Cpu {
             let lo_byte = self.pc as u8;
             let hi_byte = (self.pc >> 8) as u8;
 
+            self.advance_clock(1);
+
             self.sp -= 1;
-            mem.write(self.sp, hi_byte);
+            self.write_byte(mem, self.sp, hi_byte);
             self.sp -= 1;
-            mem.write(self.sp, lo_byte);
+            self.write_byte(mem, self.sp, lo_byte);
 
             self.pc = addr;
         }
@@ -1776,21 +1815,25 @@ impl Cpu {
         let lo_byte = self.pc as u8;
         let hi_byte = (self.pc >> 8) as u8;
 
+        self.advance_clock(1);
+
         self.sp -= 1;
-        mem.write(self.sp, hi_byte);
+        self.write_byte(mem, self.sp, hi_byte);
         self.sp -= 1;
-        mem.write(self.sp, lo_byte);
+        self.write_byte(mem, self.sp, lo_byte);
 
         self.pc = addr;
     }
 
     fn opcode_reti(&mut self, mem: &mut Memory) {
-        let lo_byte = mem.read(self.sp);
+        let lo_byte = self.read_byte(mem, self.sp);
         self.sp += 1;
-        let hi_byte = mem.read(self.sp);
+        let hi_byte = self.read_byte(mem, self.sp);
         self.sp += 1;
 
         let addr = (hi_byte as u16) << 8 | lo_byte as u16;
+
+        self.advance_clock(1);
 
         self.pc = addr;
         self.interrupts_enabled = true;
@@ -1800,10 +1843,12 @@ impl Cpu {
         let lo_byte = self.pc as u8;
         let hi_byte = (self.pc >> 8) as u8;
 
+        self.advance_clock(1);
+
         self.sp -= 1;
-        mem.write(self.sp, hi_byte);
+        self.write_byte(mem, self.sp, hi_byte);
         self.sp -= 1;
-        mem.write(self.sp, lo_byte);
+        self.write_byte(mem, self.sp, lo_byte);
 
         self.pc = value;
     }
@@ -1813,10 +1858,10 @@ impl Cpu {
         let a = self.regs.read_value8_from(dest);
 
         //let result = self.alu.rotate_right_8_carry(a);
-        let (flags, result) = alu::rotate_right_8_carry(flags, a);
+        let (mut flags, result) = alu::rotate_right_8_carry(flags, a);
 
         //self.alu.toggle_zero(result);
-        alu::toggle_zero(flags, result == 0);
+        flags = alu::toggle_zero(flags, result == 0);
 
         self.regs.write_value8_to(dest, result);
         self.regs.write_value8_to(RegByte::F, flags);
@@ -1825,7 +1870,7 @@ impl Cpu {
     fn opcode_rr_memory(&mut self, mem: &mut Memory, dest: RegWord) {
         let flags = self.regs.read_value8_from(RegByte::F);
         let ptr = self.regs.read_value16_from(dest);
-        let value = mem.read(ptr);
+        let value = self.read_byte(mem, ptr);
 
         //let result = self.alu.rotate_right_8_carry(value);
         let (flags, result) = alu::rotate_right_8_carry(flags, value);
@@ -1833,7 +1878,7 @@ impl Cpu {
         //self.alu.toggle_zero(result);
         alu::toggle_zero(flags, result == 0);
 
-        mem.write(ptr, result);
+        self.write_byte(mem, ptr, result);
         self.regs.write_value8_to(RegByte::F, flags);
     }
 
@@ -1864,62 +1909,76 @@ impl Cpu {
 
     fn opcode_ret_nc(&mut self, mem: &mut Memory) {
         let flags = self.regs.read_value8_from(RegByte::F);
+        self.advance_clock(1);
+
         if !alu::check_carry_flag(flags) {
-            let lo_byte = mem.read(self.sp);
+            let lo_byte = self.read_byte(mem, self.sp);
             self.sp += 1;
-            let hi_byte = mem.read(self.sp);
+            let hi_byte = self.read_byte(mem, self.sp);
             self.sp += 1;
             let addr = (hi_byte as u16) << 8 | lo_byte as u16;
+
+            self.advance_clock(1);
             self.pc = addr;
         }
     }
 
     fn opcode_ret_c(&mut self, mem: &mut Memory) {
         let flags = self.regs.read_value8_from(RegByte::F);
+        self.advance_clock(1);
         if alu::check_carry_flag(flags) {
-            let lo_byte = mem.read(self.sp);
+            let lo_byte = self.read_byte(mem, self.sp);
             self.sp += 1;
-            let hi_byte = mem.read(self.sp);
+            let hi_byte = self.read_byte(mem, self.sp);
             self.sp += 1;
             let addr = (hi_byte as u16) << 8 | lo_byte as u16;
+
+            self.advance_clock(1);
             self.pc = addr;
         }
     }
 
     fn opcode_ret_z(&mut self, mem: &mut Memory) {
         let flags = self.regs.read_value8_from(RegByte::F);
+        self.advance_clock(1);
         if alu::check_zero_flag(flags) {
-            let lo_byte = mem.read(self.sp);
+            let lo_byte = self.read_byte(mem, self.sp);
             self.sp += 1;
-            let hi_byte = mem.read(self.sp);
+            let hi_byte = self.read_byte(mem, self.sp);
             self.sp += 1;
             let addr = (hi_byte as u16) << 8 | lo_byte as u16;
 
+            self.advance_clock(1);
             self.pc = addr;
         }
     }
 
     fn opcode_ret_nz(&mut self, mem: &mut Memory) {
         let flags = self.regs.read_value8_from(RegByte::F);
+        self.advance_clock(1);
+
         if !alu::check_zero_flag(flags) {
-            let lo_byte = mem.read(self.sp);
+            let lo_byte = self.read_byte(mem, self.sp);
             self.sp += 1;
-            let hi_byte = mem.read(self.sp);
+            let hi_byte = self.read_byte(mem, self.sp);
             self.sp += 1;
 
             let addr = (hi_byte as u16) << 8 | lo_byte as u16;
-
+            
+            self.advance_clock(1);
             self.pc = addr;
         }
     }
 
     fn opcode_ret(&mut self, mem: &mut Memory) {
-        let lo_byte = mem.read(self.sp);
+        let lo_byte = self.read_byte(mem, self.sp);
         self.sp += 1;
-        let hi_byte = mem.read(self.sp);
+        let hi_byte = self.read_byte(mem, self.sp);
         self.sp += 1;
 
         let addr = (hi_byte as u16) << 8 | lo_byte as u16;
+
+        self.advance_clock(1);
 
         self.pc = addr;
     }
@@ -1935,8 +1994,8 @@ impl Cpu {
         let lo_byte = self.sp as u8;
         let hi_byte = (self.sp >> 8) as u8;
 
-        mem.write(addr, lo_byte);
-        mem.write(addr + 1, hi_byte);
+        self.write_byte(mem, addr, lo_byte);
+        self.write_byte(mem, addr + 1, hi_byte);
     }
 
     fn opcode_swap_register(&mut self, dest: RegByte) {
@@ -1961,7 +2020,7 @@ impl Cpu {
     fn opcode_swap_memory(&mut self, mem: &mut Memory, dest: RegWord) {
         let mut flags = self.regs.read_value8_from(RegByte::F);
         let ptr = self.regs.read_value16_from(dest);
-        let value = mem.read(ptr);
+        let value = self.read_byte(mem, ptr);
 
         let hi_byte: u8 = value & 0xF0;
         let lo_byte: u8 = value & 0x0F;
@@ -1974,7 +2033,7 @@ impl Cpu {
                         FlagState::Clear,
                         FlagState::Clear);
 
-        mem.write(ptr, result);
+        self.write_byte(mem, ptr, result);
         self.regs.write_value8_to(RegByte::F, flags);
     }
 
@@ -1993,12 +2052,12 @@ impl Cpu {
         let flags = self.regs.read_value8_from(RegByte::F);
 
         let ptr = self.regs.read_value16_from(dest);
-        let value = mem.read(ptr);
+        let value = self.read_byte(mem, ptr);
 
         //let result = self.alu.shift_right_logic_8(value);
         let (flags, result) = alu::shift_right_logic_8(flags, value);
 
-        mem.write(ptr, result);
+        self.write_byte(mem, ptr, result);
         self.regs.write_value8_to(RegByte::F, flags);
     }
 
