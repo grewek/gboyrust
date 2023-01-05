@@ -262,7 +262,7 @@ impl AssemblyDesc {
             offset,
             opcode: Opcode::Load,
             dest: Argument::R(dest),
-            src: Argument::Address(src),
+            src: Argument::Address((0xFF << 8) | src),
             size: 2,
         }
     }
@@ -1210,7 +1210,7 @@ impl AssemblyDesc {
             0xED => AssemblyDesc::data_byte(offset, opcode),
             0xEE => AssemblyDesc::xor_byte(offset, bytes[0]),
             0xEF => AssemblyDesc::rst_byte(offset, 0x28),
-            0xF0 => AssemblyDesc::load_offset_to_register(offset, Register::A, bytes[1] as u16),
+            0xF0 => AssemblyDesc::load_offset_to_register(offset, Register::A, bytes[0] as u16),
             0xF2 => AssemblyDesc::load_memory_to_register(offset, Register::A, Register::A),
             0xF3 => AssemblyDesc::di(offset),
             0xF4 => AssemblyDesc::data_byte(offset, opcode),

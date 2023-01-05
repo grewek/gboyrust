@@ -1,13 +1,17 @@
 mod alu;
 pub mod register;
+mod timer;
 
 use crate::{
     cpu::register::{RegByte, RegWord},
     memory::Memory,
+    memory::MemoryEvent,
 };
 
 use self::register::Registers;
 use self::alu::FlagState;
+use self::timer::Timer;
+
 
 #[derive(Debug)]
 pub struct Cpu {
@@ -15,6 +19,7 @@ pub struct Cpu {
     pub sp: u16,
     pub pc: u16,
     pub machine_cycles: usize,
+    timer: Timer,
 
     interrupts_enabled: bool,
 }
@@ -28,6 +33,8 @@ impl Cpu {
             sp,
             pc,
             machine_cycles: 0,
+            timer: Timer::new(),
+
 
             interrupts_enabled: false,
         }
@@ -41,6 +48,7 @@ impl Default for Cpu {
             sp: 0xFFFE,
             pc: 0x0101,
             machine_cycles: 0,
+            timer: Timer::new(),
 
             interrupts_enabled: false,
         }
@@ -656,17 +664,31 @@ impl Cpu {
                 0xFF => self.opcode_rst(memory, 0x0038),
                 _ => panic!("Please implement the opcode {:X}", opcode),
             }
-
         }
+
+        self.timer.timer_tick(self.machine_cycles, memory);
     }
 
+    fn advance_clock_update_timer(&mut self, elapsed: usize, mem: &mut Memory) {
+        //NOTE: Another hacky way of updating the timer...
+        self.machine_cycles = self.machine_cycles.overflowing_add(elapsed).0;
+        self.timer.timer_tick(self.machine_cycles, mem);
+    }
     fn advance_clock(&mut self, elapsed: usize) {
-        self.machine_cycles += elapsed;
+        self.machine_cycles = self.machine_cycles.overflowing_add(elapsed).0;
     }
 
     fn write_byte(&mut self, mem: &mut Memory, addr: u16, value: u8) {
-        mem.write(addr, value);
-        self.advance_clock(1);
+        self.advance_clock_update_timer(1, mem);
+        let event = mem.write(addr, value);
+
+        match event {
+            MemoryEvent::WriteDivRegister => {
+                self.timer.timer_reset(self.machine_cycles);
+                dbg!(&self.timer);
+            }
+            _ => (),
+        }
     }
 
     fn fetch_word(&mut self, mem: &Memory) -> u16 {
@@ -679,9 +701,9 @@ impl Cpu {
         (hi_byte as u16) << 8 | lo_byte as u16
     }
 
-    fn read_byte(&mut self, mem: &Memory, addr: u16) -> u8 {
+    fn read_byte(&mut self, mem: &mut Memory, addr: u16) -> u8 {
+        self.advance_clock_update_timer(1, mem);
         let value = mem.read(addr);
-        self.advance_clock(1);
 
         value
     }
@@ -1210,7 +1232,7 @@ impl Cpu {
         self.write_byte(mem, addr, value);
     }
 
-    fn opcode_ld_memory_to_register(&mut self, mem: &Memory, dest: RegByte, src: RegWord) {
+    fn opcode_ld_memory_to_register(&mut self, mem: &mut Memory, dest: RegByte, src: RegWord) {
         let addr = self.regs.read_value16_from(src);
 
         let value = self.read_byte(mem, addr);
