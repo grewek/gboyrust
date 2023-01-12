@@ -1,10 +1,11 @@
-pub const DIV_CLOCK_REGISTER: u16  = 0xFF04;
+pub const DIV_CLOCK_REGISTER: u16 = 0xFF04;
 pub const TIMA_CLOCK_REGISTER: u16 = 0xFF05;
-pub const TMA_CLOCK_REGISTER: u16  = 0xFF06;
-pub const TAC_CLOCK_REGISTER: u16  = 0xFF07;
+pub const TMA_CLOCK_REGISTER: u16 = 0xFF06;
+pub const TAC_CLOCK_REGISTER: u16 = 0xFF07;
 
 pub enum MemoryEvent {
     WriteDivRegister,
+    WriteTmaRegister,
     WriteMemory,
 }
 pub struct Memory {
@@ -17,7 +18,7 @@ impl Default for Memory {
             bytes: [0x00; 0x10000],
         };
 
-        default.bytes[TAC_CLOCK_REGISTER as usize] = 0xF8; 
+        default.bytes[TAC_CLOCK_REGISTER as usize] = 0xF8;
         //NOTE: This for the mooneye testsuit
         default.bytes[0xFF44] = 0xFF;
         default.bytes[0xFF02] = 0xFF;
@@ -43,8 +44,8 @@ impl Memory {
         match addr {
             0xFF02 => self.serial_write_debug(value),
             0xFF04 => self.div_register_reset(),
+            0xFF06 => self.write_tma_register(value),
             _ => self.write_generic(addr, value),
-
         }
         /*if addr == 0xFF02 && value == 0x81 {
             let byte = char::from(self.bytes[0xFF01]);
@@ -60,6 +61,12 @@ impl Memory {
 
     pub fn update_tima_register(&mut self, value: u8) {
         self.bytes[TIMA_CLOCK_REGISTER as usize] = value;
+    }
+
+    pub fn write_tma_register(&mut self, value: u8) -> MemoryEvent {
+        self.bytes[TMA_CLOCK_REGISTER as usize] = value;
+
+        MemoryEvent::WriteTmaRegister
     }
 
     fn write_generic(&mut self, addr: u16, value: u8) -> MemoryEvent {
