@@ -1,16 +1,15 @@
 mod alu;
 pub mod register;
-mod timer;
+pub mod timer;
 
 use crate::{
     cpu::register::{RegByte, RegWord},
     memory::Memory,
-    memory::MemoryEvent,
 };
 
 use self::alu::FlagState;
 use self::register::Registers;
-use self::timer::Timer;
+use self::timer::TimerController;
 
 #[derive(Debug)]
 pub struct Cpu {
@@ -18,7 +17,6 @@ pub struct Cpu {
     pub sp: u16,
     pub pc: u16,
     pub machine_cycles: usize,
-    timer: Timer,
     halt_mode_enabled: bool,
 
     interrupts_enabled: bool,
@@ -31,7 +29,6 @@ impl Cpu {
             sp,
             pc,
             machine_cycles: 0,
-            timer: Timer::new(),
             halt_mode_enabled: false,
 
             interrupts_enabled: false,
@@ -46,7 +43,6 @@ impl Default for Cpu {
             sp: 0xFFFE,
             pc: 0x0101,
             machine_cycles: 0,
-            timer: Timer::new(),
             halt_mode_enabled: false,
 
             interrupts_enabled: false,
@@ -73,56 +69,64 @@ impl Cpu {
         let serial_ie = (ie_table >> 3) & 0x01;
         let joypad_ie = (ie_table >> 4) & 0x01;
 
-        if if_table & ie_table != 0 && !self.interrupts_enabled {
+        if if_table != 0 && ie_table != 0 && !self.interrupts_enabled {
             self.halt_mode_enabled = false;
             return;
         }
 
-        if vblank_ie == 0x01 && vblank_if == 0x01 {
-            todo!();
+        if self.interrupts_enabled {
+            self.advance_clock(2);
 
-            let _if_table = if_table & !(0x01);
-            self.halt_mode_enabled = false;
+            if vblank_ie == 0x01 && vblank_if == 0x01 {
+                todo!();
+            }
+
+            if lcdstat_ie == 0x01 && lcdstat_if == 0x01 {
+                todo!();
+            }
+
+            if timer_if == 0x01 && timer_ie == 0x01 {
+                //NOTE: Bit Index * 2 + 64 == Target Interrupt Address !
+                let jump_addr = (2 * 8) + 64;
+
+                let lo_byte = self.pc as u8;
+                let hi_byte = (self.pc >> 8) as u8;
+                self.advance_clock(2);
+
+                self.sp -= 1;
+                mem.write(self.sp, hi_byte);
+                self.sp -= 1;
+                mem.write(self.sp, lo_byte);
+
+                let if_table = if_table & !(0x01 << 2);
+                mem.write(0xFF0F, if_table);
+
+                self.pc = jump_addr;
+                self.advance_clock(1);
+                self.halt_mode_enabled = false;
+            }
+
+            if serial_ie == 0x01 && serial_if == 0x01 {
+                todo!();
+            }
+
+            if joypad_ie == 0x01 && joypad_if == 0x01 {
+                todo!();
+            }
         }
+    }
 
-        if lcdstat_ie == 0x01 && lcdstat_if == 0x01 {
-            todo!();
-
-            let _if_table = if_table & !(0x01 << 1);
-            self.halt_mode_enabled = false;
-        }
-
-        if timer_if == 0x01 && timer_ie == 0x01 {
-            //NOTE: Bit Index * 2 + 64 == Target Interrupt Address !
-            let jump_addr = (2 * 8) + 64;
-
-            let lo_byte = self.pc as u8;
-            let hi_byte = (self.pc >> 8) as u8;
-
-            self.sp -= 1;
-            mem.write(self.sp, hi_byte);
-            self.sp -= 1;
-            mem.write(self.sp, lo_byte);
-
-            let if_table = if_table & !(0x01 << 2);
-            mem.write(0xFF0F, if_table);
-
-            self.pc = jump_addr;
-            self.halt_mode_enabled = false;
-        }
-
-        if serial_ie == 0x01 && serial_if == 0x01 {
-            todo!();
-
-            let _if_table = if_table & !(0x01 << 3);
-            self.halt_mode_enabled = false;
-        }
-
-        if joypad_ie == 0x01 && joypad_if == 0x01 {
-            todo!();
-
-            let _if_table = if_table & !(0x01 << 4);
-            self.halt_mode_enabled = false;
+    fn decode_8bit(&self, opcode: u8) -> RegByte {
+        let y = (opcode >> 5) & 0x03;
+        match y {
+            0x00 => RegByte::B,
+            0x01 => RegByte::C,
+            0x02 => RegByte::D,
+            0x03 => RegByte::E,
+            0x04 => RegByte::H,
+            0x05 => RegByte::L,
+            0x06 => RegByte::A,
+            _ => panic!("Out of range"),
         }
     }
 
@@ -674,15 +678,17 @@ impl Cpu {
             self.advance_clock(1);
         }
 
-        self.timer.timer_tick(self.machine_cycles, memory);
-        self.timer.tima_tick(self.machine_cycles, memory);
+        memory.update_timer(self.machine_cycles);
+        //self.timer.timer_tick(self.machine_cycles, memory);
+        //self.timer.tima_tick(self.machine_cycles, memory);
     }
 
     fn advance_clock_update_timer(&mut self, elapsed: usize, mem: &mut Memory) {
         //NOTE: Another hacky way of updating the timer...
         self.machine_cycles = self.machine_cycles.overflowing_add(elapsed).0;
-        self.timer.timer_tick(self.machine_cycles, mem);
-        self.timer.tima_tick(self.machine_cycles, mem);
+        mem.update_timer(self.machine_cycles);
+        //self.timer.timer_tick(self.machine_cycles, mem);
+        //self.timer.tima_tick(self.machine_cycles, mem);
     }
     fn advance_clock(&mut self, elapsed: usize) {
         self.machine_cycles = self.machine_cycles.overflowing_add(elapsed).0;
@@ -691,16 +697,6 @@ impl Cpu {
     fn write_byte(&mut self, mem: &mut Memory, addr: u16, value: u8) {
         self.advance_clock_update_timer(1, mem);
         let event = mem.write(addr, value);
-
-        match event {
-            MemoryEvent::WriteDivRegister => {
-                self.timer.timer_reset(self.machine_cycles);
-            }
-            MemoryEvent::WriteTmaRegister => {
-                self.timer.set_tma_register(value);
-            }
-            _ => (),
-        }
     }
 
     fn fetch_word(&mut self, mem: &Memory) -> u16 {
@@ -1286,8 +1282,6 @@ impl Cpu {
     fn opcode_ld_register_to_register(&mut self, dest: RegByte, src: RegByte) {
         let src = self.regs.read_value8_from(src);
         self.regs.write_value8_to(dest, src);
-
-        self.advance_clock(1);
     }
 
     fn opcode_ldi_register_to_memory(&mut self, mem: &mut Memory, dest: RegWord, src: RegByte) {

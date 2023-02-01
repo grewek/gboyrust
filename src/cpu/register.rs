@@ -179,9 +179,10 @@ mod test {
         regs.write_value8_to(reg_a, 0x11);
         assert_eq!(regs.a, 0x11);
 
+        //NOTE: The lower bits of the flag register are not writable !
         let reg_f = RegByte::F;
         regs.write_value8_to(reg_f, 0x22);
-        assert_eq!(regs.f, 0x22);
+        assert_eq!(regs.f, 0x20);
 
         let reg_b = RegByte::B;
         regs.write_value8_to(reg_b, 0x33);

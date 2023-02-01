@@ -2,7 +2,14 @@ use std::{collections::HashMap, collections::HashSet, fs::File, io::Read};
 
 use egui::Color32;
 
-use crate::{cpu::{Cpu, register::{RegWord, RegByte}}, disassembler::AssemblyDesc, memory::Memory};
+use crate::{
+    cpu::{
+        register::{RegByte, RegWord},
+        Cpu,
+    },
+    disassembler::AssemblyDesc,
+    memory::Memory,
+};
 
 //NOTE:  Gameboy Memory Map:
 //Start     End     Size    Description
@@ -42,11 +49,19 @@ impl Debugger {
         match instr.size {
             1 => [Some(memory[offset]), None, None],
             2 => [Some(memory[offset]), Some(memory[offset + 1]), None],
-            3 => [Some(memory[offset]), Some(memory[offset + 1]), Some(memory[offset + 2])],
+            3 => [
+                Some(memory[offset]),
+                Some(memory[offset + 1]),
+                Some(memory[offset + 2]),
+            ],
             _ => panic!("Instruction size out of range!"),
         }
     }
-    pub fn disassemble(&self, disassembly_cache: &mut Vec<([Option<u8>; 3], AssemblyDesc)>, disassembly_map: &mut HashMap<u16, usize>) {
+    pub fn disassemble(
+        &self,
+        disassembly_cache: &mut Vec<([Option<u8>; 3], AssemblyDesc)>,
+        disassembly_map: &mut HashMap<u16, usize>,
+    ) {
         disassembly_cache.clear();
         let mut start = 0x0000;
         let memory = self.memory.get_mem_slice();
@@ -89,7 +104,11 @@ impl Debugger {
     }
 
     pub fn is_registered_breakpoint(&self, offset: u16) -> bool {
-        if self.breakpoints.contains(&offset) { true } else { false }
+        if self.breakpoints.contains(&offset) {
+            true
+        } else {
+            false
+        }
     }
 
     pub fn get_register_word(&self, reg: RegWord) -> String {
@@ -108,11 +127,40 @@ impl Debugger {
         format!("{:04X}", self.cpu.sp)
     }
 
+    pub fn get_div_timer(&self) -> String {
+        format!("{:03}", self.memory.read(0xFF04))
+    }
+
+    pub fn get_custom_timer(&self) -> String {
+        format!("{:03}", self.memory.read(0xFF05))
+    }
+
+    pub fn get_custom_timer_tick_rate(&self) -> String {
+        let tac_value = self.memory.read(0xFF07);
+        let div_index = (tac_value & 0x03) as usize;
+
+        let current_tick_rate = match div_index {
+            0 => 1024,
+            1 => 16,
+            2 => 64,
+            3 => 256,
+            _ => panic!("ERROR: Tickrate index was out of range !"),
+        };
+
+        format!("{:04}", current_tick_rate)
+    }
+
+    pub fn get_timer_reset(&self) -> String {
+        format!("{:03}", self.memory.read(0xFF06))
+    }
     pub fn run(&mut self) {
         //FIXME: If there is no breakpoint this loop is a infinite one and will
         //       not return to the caller.
         loop {
-            if self.breakpoints.contains(&(self.get_program_counter() as u16)) {
+            if self
+                .breakpoints
+                .contains(&(self.get_program_counter() as u16))
+            {
                 break;
             }
 
