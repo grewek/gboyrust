@@ -140,7 +140,7 @@ impl TimerTick for TimaRegister {
                     interrupt_requested = true;
                 }
 
-                self.last_tima_update = timer;
+                self.last_tima_update = timer - elapsed;
             }
         }
 

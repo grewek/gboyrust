@@ -1,12 +1,13 @@
+mod assembler;
 mod cpu;
 mod debugger;
 mod debugger_view;
 mod disassembler;
 mod memory;
 
+use std::env;
 use std::fs::File;
 use std::io::Read;
-use std::env;
 
 use debugger_view::DebuggerView;
 
