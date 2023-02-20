@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 #[derive(Debug, Eq, PartialEq, PartialOrd)]
 enum TokenType {
     //Symbols
@@ -313,31 +312,27 @@ impl Lexer {
 mod test {
     use super::*;
 
+    fn expected_token(t: TokenType, start: &str, end: &str, line: usize) -> Token {
+        Token {
+            token: t,
+            position: TokenPosition {
+                start: start.len(),
+                end: end.len(),
+                line,
+            },
+        }
+    }
+
     #[test]
     fn test_lexer_symbol() {
         let source = "symbol";
 
         let expected = vec![
-            Token {
-                token: TokenType::Identifier,
-                position: TokenPosition {
-                    start: 0,
-                    end: 6,
-                    line: 1,
-                },
-            },
-            Token {
-                token: TokenType::EOF,
-                position: TokenPosition {
-                    start: 6,
-                    end: 6,
-                    line: 1,
-                },
-            },
+            expected_token(TokenType::Identifier, "", "symbol", 1),
+            expected_token(TokenType::EOF, "symbol", "symbol", 1),
         ];
 
         let result = Lexer::new(source).tokenize();
-
         assert_eq!(result[..], expected[..]);
     }
 
@@ -346,26 +341,11 @@ mod test {
         let source = "255";
 
         let expected = vec![
-            Token {
-                token: TokenType::DecimalValue,
-                position: TokenPosition {
-                    start: 0,
-                    end: 3,
-                    line: 1,
-                },
-            },
-            Token {
-                token: TokenType::EOF,
-                position: TokenPosition {
-                    start: 3,
-                    end: 3,
-                    line: 1,
-                },
-            },
+            expected_token(TokenType::DecimalValue, "", "255", 1),
+            expected_token(TokenType::EOF, "255", "255", 1),
         ];
 
         let result = Lexer::new(source).tokenize();
-
         assert_eq!(result[..], expected[..]);
     }
 
@@ -374,74 +354,17 @@ mod test {
         let source = "A B C D E H L";
 
         let expected = vec![
-            Token {
-                token: TokenType::RegisterA,
-                position: TokenPosition {
-                    start: 0,
-                    end: 1,
-                    line: 1,
-                },
-            },
-            Token {
-                token: TokenType::RegisterB,
-                position: TokenPosition {
-                    start: 2,
-                    end: 3,
-                    line: 1,
-                },
-            },
-            Token {
-                token: TokenType::RegisterC,
-                position: TokenPosition {
-                    start: 4,
-                    end: 5,
-                    line: 1,
-                },
-            },
-            Token {
-                token: TokenType::RegisterD,
-                position: TokenPosition {
-                    start: 6,
-                    end: 7,
-                    line: 1,
-                },
-            },
-            Token {
-                token: TokenType::RegisterE,
-                position: TokenPosition {
-                    start: 8,
-                    end: 9,
-                    line: 1,
-                },
-            },
-            Token {
-                token: TokenType::RegisterH,
-                position: TokenPosition {
-                    start: 10,
-                    end: 11,
-                    line: 1,
-                },
-            },
-            Token {
-                token: TokenType::RegisterL,
-                position: TokenPosition {
-                    start: 12,
-                    end: 13,
-                    line: 1,
-                },
-            },
-            Token {
-                token: TokenType::EOF,
-                position: TokenPosition {
-                    start: 13,
-                    end: 13,
-                    line: 1,
-                },
-            },
+            expected_token(TokenType::RegisterA, "", "A", 1),
+            expected_token(TokenType::RegisterB, "A ", "A B", 1),
+            expected_token(TokenType::RegisterC, "A B ", "A B C", 1),
+            expected_token(TokenType::RegisterD, "A B C ", "A B C D", 1),
+            expected_token(TokenType::RegisterE, "A B C D ", "A B C D E", 1),
+            expected_token(TokenType::RegisterH, "A B C D E ", "A B C D E H", 1),
+            expected_token(TokenType::RegisterL, "A B C D E H ", "A B C D E H L", 1),
+            expected_token(TokenType::EOF, "A B C D E H L", "A B C D E H L", 1),
         ];
 
         let result = Lexer::new(source).tokenize();
-
         assert_eq!(result[..], expected[..]);
     }
 
@@ -449,58 +372,15 @@ mod test {
     fn test_lexer_16bit_registers() {
         let source = "AF BC DE HL SP";
         let expected = vec![
-            Token {
-                token: TokenType::RegisterAF,
-                position: TokenPosition {
-                    start: 0,
-                    end: 2,
-                    line: 1,
-                },
-            },
-            Token {
-                token: TokenType::RegisterBC,
-                position: TokenPosition {
-                    start: 3,
-                    end: 5,
-                    line: 1,
-                },
-            },
-            Token {
-                token: TokenType::RegisterDE,
-                position: TokenPosition {
-                    start: 6,
-                    end: 8,
-                    line: 1,
-                },
-            },
-            Token {
-                token: TokenType::RegisterHL,
-                position: TokenPosition {
-                    start: 9,
-                    end: 11,
-                    line: 1,
-                },
-            },
-            Token {
-                token: TokenType::RegisterSP,
-                position: TokenPosition {
-                    start: 12,
-                    end: 14,
-                    line: 1,
-                },
-            },
-            Token {
-                token: TokenType::EOF,
-                position: TokenPosition {
-                    start: 14,
-                    end: 14,
-                    line: 1,
-                },
-            },
+            expected_token(TokenType::RegisterAF, "", "AF", 1),
+            expected_token(TokenType::RegisterBC, "AF ", "AF BC", 1),
+            expected_token(TokenType::RegisterDE, "AF BC ", "AF BC DE", 1),
+            expected_token(TokenType::RegisterHL, "AF BC DE ", "AF BC DE HL", 1),
+            expected_token(TokenType::RegisterSP, "AF BC DE HL ", "AF BC DE HL SP", 1),
+            expected_token(TokenType::EOF, "AF BC DE HL SP", "AF BC DE HL SP", 1),
         ];
 
         let result = Lexer::new(source).tokenize();
-
         assert_eq!(&result[..], &expected[..]);
     }
     #[test]
@@ -510,54 +390,12 @@ mod test {
         //let source_b = "LD b, #$ff";
         //let source_c = "lD B, #$fF";
         let expected = vec![
-            Token {
-                token: TokenType::Ld,
-                position: TokenPosition {
-                    start: 0,
-                    end: 2,
-                    line: 1,
-                },
-            },
-            Token {
-                token: TokenType::RegisterB,
-                position: TokenPosition {
-                    start: 3,
-                    end: 4,
-                    line: 1,
-                },
-            },
-            Token {
-                token: TokenType::Comma,
-                position: TokenPosition {
-                    start: 4,
-                    end: 5,
-                    line: 1,
-                },
-            },
-            Token {
-                token: TokenType::PoundSign,
-                position: TokenPosition {
-                    start: 6,
-                    end: 7,
-                    line: 1,
-                },
-            },
-            Token {
-                token: TokenType::HexValue,
-                position: TokenPosition {
-                    start: 8,
-                    end: 10,
-                    line: 1,
-                },
-            },
-            Token {
-                token: TokenType::EOF,
-                position: TokenPosition {
-                    start: 10,
-                    end: 10,
-                    line: 1,
-                },
-            },
+            expected_token(TokenType::Ld, "", "ld", 1),
+            expected_token(TokenType::RegisterB, "ld ", "ld B", 1),
+            expected_token(TokenType::Comma, "ld B", "ld B,", 1),
+            expected_token(TokenType::PoundSign, "ld B, ", "ld B, #", 1),
+            expected_token(TokenType::HexValue, "ld B, #$", "ld B, #$FF", 1),
+            expected_token(TokenType::EOF, "ld B, #$FF", "ld B, #$FF", 1),
         ];
 
         let result = Lexer::new(&source).tokenize();
@@ -574,54 +412,37 @@ mod test {
         let source = "byte_array .dba $FF,$00";
 
         let expected = vec![
-            Token {
-                token: TokenType::Identifier,
-                position: TokenPosition {
-                    start: 0,
-                    end: "byte_array".len(),
-                    line: 1,
-                },
-            },
-            Token {
-                token: TokenType::MacroDefineByteArray,
-                position: TokenPosition {
-                    start: "byte_array .".len(),
-                    end: "byte_array .".len() + ("dba".len()),
-                    line: 1,
-                },
-            },
-            Token {
-                token: TokenType::HexValue,
-                position: TokenPosition {
-                    start: "byte_array .dba $".len(),
-                    end: "byte_array .dba $FF".len(),
-                    line: 1,
-                },
-            },
-            Token {
-                token: TokenType::Comma,
-                position: TokenPosition {
-                    start: "byte_array .dba $FF".len(),
-                    end: "byte_array.dba $FF,$".len(),
-                    line: 1,
-                },
-            },
-            Token {
-                token: TokenType::HexValue,
-                position: TokenPosition {
-                    start: "byte_array .dba $FF,$".len(),
-                    end: "byte_array .dba $FF,$FF".len(),
-                    line: 1,
-                },
-            },
-            Token {
-                token: TokenType::EOF,
-                position: TokenPosition {
-                    start: "byte_array .dba $FF,$FF".len(),
-                    end: "byte_array .dba $FF,$FF".len(),
-                    line: 1,
-                },
-            },
+            expected_token(TokenType::Identifier, "", "byte_array", 1),
+            expected_token(
+                TokenType::MacroDefineByteArray,
+                "byte_array .",
+                "byte_array .dba",
+                1,
+            ),
+            expected_token(
+                TokenType::HexValue,
+                "byte_array .dba $",
+                "byte_array .dba $FF",
+                1,
+            ),
+            expected_token(
+                TokenType::Comma,
+                "byte_array .dba $FF",
+                "byte_array .dba $FF,",
+                1,
+            ),
+            expected_token(
+                TokenType::HexValue,
+                "byte_array .dba $FF,$",
+                "byte_array .dba $FF,$FF",
+                1,
+            ),
+            expected_token(
+                TokenType::EOF,
+                "byte_array .dba $FF,$FF",
+                "byte_array .dba $FF,$FF",
+                1,
+            ),
         ];
 
         let result = Lexer::new(&source).tokenize();
@@ -632,22 +453,13 @@ mod test {
     fn test_label_definition() {
         let source = "some_label:";
         let expected = vec![
-            Token {
-                token: TokenType::Identifier,
-                position: TokenPosition {
-                    start: "".len(),
-                    end: "some_label".len(),
-                    line: 1,
-                },
-            },
-            Token {
-                token: TokenType::Comma,
-                position: TokenPosition {
-                    start: "some_label".len(),
-                    end: "some_label:".len(),
-                    line: 1,
-                },
-            },
+            expected_token(TokenType::Identifier, "", "some_label", 1),
+            expected_token(TokenType::Colon, "some_label", "some_label:", 1),
+            expected_token(TokenType::EOF, "some_label:", "some_label:", 1),
         ];
+
+        let result = Lexer::new(&source).tokenize();
+
+        assert_eq!(result[..], expected[..]);
     }
 }
