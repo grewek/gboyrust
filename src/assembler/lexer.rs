@@ -41,11 +41,18 @@ enum TokenType {
     Ei,
     Di,
 
+    //Flags
+    ZeroFlag,
+    NegativeFlag,
+    CarryFlag,
+    HalfCarryFlag,
+
     //Value Definitions
     MacroDefineByte,
     MacroDefineWord,
     MacroDefineDWord,
     MacroDefineByteArray,
+    String,
 
     //Symbols
     RegisterA,
@@ -109,6 +116,11 @@ impl From<&str> for TokenType {
             "dw" => TokenType::MacroDefineWord,
             "dd" => TokenType::MacroDefineDWord,
             "dba" => TokenType::MacroDefineByteArray,
+
+            "zf" => TokenType::ZeroFlag,
+            "nf" => TokenType::NegativeFlag,
+            "cf" => TokenType::CarryFlag,
+            "hf" => TokenType::HalfCarryFlag,
 
             //Register Symbols
             "a" => TokenType::RegisterA,
@@ -204,6 +216,8 @@ impl Lexer {
             let character = self.peek();
 
             let token = match character.to_ascii_lowercase() {
+                b'"' => self.scan_string(),
+                b'%' => self.scan_binary_number(),
                 b'$' => self.scan_hexnumber(),
                 b'_' | b'A'..=b'Z' | b'a'..=b'z' => self.scan_identifier(),
                 b'.' => self.scan_macro(),
@@ -220,7 +234,7 @@ impl Lexer {
     }
 
     fn scan_macro(&mut self) -> Token {
-        self.advance();
+        self.advance(); // Consume the dot symbol
         let start = self.position;
 
         while !self.reached_end() && self.peek().is_ascii_alphanumeric() || self.peek() == b'_' {
@@ -231,6 +245,29 @@ impl Lexer {
 
         Token {
             token: TokenType::from(identifier),
+            position: TokenPosition::new(start, self.position, self.line),
+        }
+    }
+
+    fn scan_string(&mut self) -> Token {
+        self.advance(); //Consume the first quote symbol
+        let start = self.position;
+
+        while !self.reached_end() {
+            if self.peek() == b'"' {
+                self.advance();
+                break;
+            }
+
+            self.advance();
+        }
+
+        if self.reached_end() && self.source.as_bytes()[self.position - 1] != b'"' {
+            panic!("String without valid end.");
+        }
+
+        Token {
+            token: TokenType::String,
             position: TokenPosition::new(start, self.position, self.line),
         }
     }
@@ -249,14 +286,29 @@ impl Lexer {
         }
     }
 
+    fn is_binarydigit(byte: u8) -> bool {
+        match byte.to_ascii_lowercase() {
+            b'0' | b'1' => true,
+            _ => false,
+        }
+    }
+    fn scan_binary_number(&mut self) -> Token {
+        self.advance(); //Consume the % symbol
+        let start = self.position;
+
+        while !self.reached_end() && Lexer::is_binarydigit(self.peek()) {
+            self.advance();
+        }
+
+        Token {
+            token: TokenType::BinaryValue,
+            position: TokenPosition::new(start, self.position, self.line),
+        }
+    }
     fn scan_number(&mut self) -> Token {
         let start = self.position;
 
         while !self.reached_end() && self.peek().is_ascii_digit() {
-            if self.peek().is_ascii_whitespace() || self.peek().is_ascii_control() {
-                break;
-            }
-
             self.advance();
         }
 
@@ -272,8 +324,9 @@ impl Lexer {
             _ => false,
         }
     }
+
     fn scan_hexnumber(&mut self) -> Token {
-        self.advance();
+        self.advance(); //Consume the $ symbol
         let start = self.position;
 
         while !self.reached_end() && Lexer::is_hexsymbol(self.peek()) {
@@ -324,6 +377,45 @@ mod test {
     }
 
     #[test]
+    #[should_panic]
+    fn test_lexer_invalid_string() {
+        //TODO: Panic is not what we want todo here but for right now this behaviour is fine...
+        let source = "\"hello, world!";
+        let result = Lexer::new(source).tokenize();
+    }
+
+    #[test]
+    fn test_lexer_parentheses() {
+        let source = "(some_identifier)";
+        let expected = vec![
+            expected_token(TokenType::OpenParen, "", "(", 1),
+            expected_token(TokenType::Identifier, "(", "(some_identifier", 1),
+            expected_token(
+                TokenType::CloseParen,
+                "(some_identifier",
+                "(some_identifier)",
+                1,
+            ),
+            expected_token(TokenType::EOF, "(some_identifier)", "(some_identifier)", 1),
+        ];
+
+        let result = Lexer::new(source).tokenize();
+        assert_eq!(result[..], expected[..]);
+    }
+
+    #[test]
+    fn test_lexer_string() {
+        let source = "\"hello, world!\"";
+
+        let expected = vec![
+            expected_token(TokenType::String, "\"", "\"hello, world!\"", 1),
+            expected_token(TokenType::EOF, "\"hello, world!\"", "\"hello, world!\"", 1),
+        ];
+
+        let result = Lexer::new(source).tokenize();
+        assert_eq!(result[..], expected[..]);
+    }
+    #[test]
     fn test_lexer_symbol() {
         let source = "symbol";
 
@@ -343,6 +435,19 @@ mod test {
         let expected = vec![
             expected_token(TokenType::DecimalValue, "", "255", 1),
             expected_token(TokenType::EOF, "255", "255", 1),
+        ];
+
+        let result = Lexer::new(source).tokenize();
+        assert_eq!(result[..], expected[..]);
+    }
+
+    #[test]
+    fn test_lexer_binary_value() {
+        let source = "%01011101";
+
+        let expected = vec![
+            expected_token(TokenType::BinaryValue, "%", "%01011101", 1),
+            expected_token(TokenType::EOF, "%01011101", "%01011101", 1),
         ];
 
         let result = Lexer::new(source).tokenize();
@@ -405,6 +510,80 @@ mod test {
         assert_eq!(result[..], expected[..]);
         //assert_eq!(result_b[..], expected[..]);
         //assert_eq!(result_c[..], expected[..]);
+    }
+
+    #[test]
+    fn test_lexer_multiline() {
+        let source = "main: ld A, #$02\nloop:\ndec A\njr zf,$FE\nhalt";
+        let expected = vec![
+            expected_token(TokenType::Identifier, "", "main", 1),
+            expected_token(TokenType::Colon, "main", "main:", 1),
+            expected_token(TokenType::Ld, "main: ", "main: ld", 1),
+            expected_token(TokenType::RegisterA, "main: ld ", "main: ld A", 1),
+            expected_token(TokenType::Comma, "main: ld A", "main: ld A,", 1),
+            expected_token(TokenType::PoundSign, "main: ld A, ", "main: ld A, #", 1),
+            expected_token(TokenType::HexValue, "main: ld A, #$", "main: ld A, #$02", 1),
+            expected_token(
+                TokenType::Identifier,
+                "main: ld A, #$02\n",
+                "main: ld A, #$02\nloop",
+                2,
+            ),
+            expected_token(
+                TokenType::Colon,
+                "main: ld A, #$02\nloop",
+                "main: ld A, #$02\nloop:",
+                2,
+            ),
+            expected_token(
+                TokenType::Dec,
+                "main: ld A, #$02\nloop:",
+                "main: ld A, #$02\nloop:dec",
+                2,
+            ),
+            expected_token(
+                TokenType::RegisterA,
+                "main: ld A, #$02\nloop:dec ",
+                "main: ld A, #$02\nloop:dec A",
+                2,
+            ),
+            expected_token(
+                TokenType::Jr,
+                "main: ld A, #$02\nloop:dec A\n",
+                "main: ld A, #$02\nloop:dec A\njr",
+                3,
+            ),
+            expected_token(
+                TokenType::ZeroFlag,
+                "main: ld A, #$02\nloop:dec A\njr ",
+                "main: ld A, #$02\nloop:dec A\njr zf",
+                3,
+            ),
+            expected_token(
+                TokenType::Comma,
+                "main: ld A, #$02\nloop:dec A\njr zf",
+                "main: ld A, #$02\nloop:dec A\njr zf,",
+                3,
+            ),
+            expected_token(
+                TokenType::HexValue,
+                "main: ld A, #$02\nloop:dec A\njr zf,$",
+                "main: ld A, #$02\nloop:dec A\njr zf,$FE",
+                3,
+            ),
+            expected_token(
+                TokenType::Halt,
+                "main: ld A, #$02\nloop:dec A\njr zf,$FE\n",
+                "main: ld A, #$02\nloop:dec A\njr zf,$FE\nhalt",
+                4,
+            ),
+            expected_token(
+                TokenType::EOF,
+                "main: ld A, #$02\nloop:dec A\njr zf,$FE\nhalt",
+                "main: ld A, #$02\nloop:dec A\njr zf,$FE\nhalt",
+                4,
+            ),
+        ];
     }
 
     #[test]
