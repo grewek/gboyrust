@@ -117,6 +117,9 @@ impl From<&str> for TokenType {
             "dd" => TokenType::MacroDefineDWord,
             "dba" => TokenType::MacroDefineByteArray,
 
+            //TODO: These are renamed to not collide with the register keywords...
+            //      may be we should handle these and the registers as symbols and let the
+            //      parser handle the fine details...
             "zf" => TokenType::ZeroFlag,
             "nf" => TokenType::NegativeFlag,
             "cf" => TokenType::CarryFlag,
@@ -250,6 +253,8 @@ impl Lexer {
     }
 
     fn scan_string(&mut self) -> Token {
+        //TODO: Currently these are multiline strings, maybe we should rather use singleline
+        //strings ?
         self.advance(); //Consume the first quote symbol
         let start = self.position;
 
@@ -263,7 +268,12 @@ impl Lexer {
         }
 
         if self.reached_end() && self.source.as_bytes()[self.position - 1] != b'"' {
-            panic!("String without valid end.");
+            //TODO: This needs to be replaced with real error handling !
+            panic!(
+                "ERROR ({}:{}) String without valid end.",
+                self.line,
+                self.position.overflowing_sub(self.line_start).0,
+            );
         }
 
         Token {
@@ -379,7 +389,6 @@ mod test {
     #[test]
     #[should_panic]
     fn test_lexer_invalid_string() {
-        //TODO: Panic is not what we want todo here but for right now this behaviour is fine...
         let source = "\"hello, world!";
         let result = Lexer::new(source).tokenize();
     }
@@ -454,6 +463,21 @@ mod test {
         assert_eq!(result[..], expected[..]);
     }
 
+    #[test]
+    fn test_lexer_flags() {
+        let source = "zf nf cf hf";
+
+        let expected = vec![
+            expected_token(TokenType::ZeroFlag, "", "zf", 1),
+            expected_token(TokenType::NegativeFlag, "zf ", "zf nf", 1),
+            expected_token(TokenType::CarryFlag, "zf nf ", "zf nf cf", 1),
+            expected_token(TokenType::HalfCarryFlag, "zf nf cf ", "zf nf cf hf", 1),
+            expected_token(TokenType::EOF, "zf nf cf hf", "zf nf cf hf", 1),
+        ];
+
+        let result = Lexer::new(source).tokenize();
+        assert_eq!(result[..], expected[..])
+    }
     #[test]
     fn test_lexer_8bit_registers() {
         let source = "A B C D E H L";
