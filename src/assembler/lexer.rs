@@ -1,5 +1,5 @@
-#[derive(Debug, Eq, PartialEq, PartialOrd)]
-enum TokenType {
+#[derive(Debug, Eq, PartialEq, PartialOrd, Clone, Copy)]
+pub enum TokenType {
     //Symbols
     OpenParen,
     CloseParen,
@@ -8,6 +8,8 @@ enum TokenType {
     Comma,
     Dot,
     Colon,
+    Plus,
+    Minus,
 
     //Keywords
     Nop,
@@ -144,13 +146,23 @@ impl From<&str> for TokenType {
     }
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Eq)]
-struct Token {
+#[derive(Debug, PartialEq, PartialOrd, Eq, Copy, Clone)]
+pub struct Token {
     token: TokenType,
     position: TokenPosition,
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Eq)]
+impl Token {
+    pub fn tokentype(&self) -> TokenType {
+        self.token
+    }
+
+    pub fn repr_range(&self) -> std::ops::Range<usize> {
+        self.position.start..self.position.end
+    }
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Eq, Copy, Clone)]
 struct TokenPosition {
     start: usize,
     end: usize,
@@ -163,7 +175,7 @@ impl TokenPosition {
     }
 }
 
-struct Lexer {
+pub struct Lexer {
     source: String,
     length: usize,
     position: usize,
@@ -172,7 +184,7 @@ struct Lexer {
 }
 
 impl Lexer {
-    fn new(source: &str) -> Self {
+    pub fn new(source: &str) -> Self {
         Lexer {
             source: source.to_string(),
             length: source.len(),
@@ -211,7 +223,7 @@ impl Lexer {
         }
     }
 
-    fn tokenize(&mut self) -> Vec<Token> {
+    pub fn tokenize(&mut self) -> Vec<Token> {
         let mut result = vec![];
 
         while !self.reached_end() {
@@ -361,6 +373,8 @@ impl Lexer {
             b',' => TokenType::Comma,
             b'.' => TokenType::Dot,
             b':' => TokenType::Colon,
+            b'+' => TokenType::Plus,
+            b'-' => TokenType::Minus,
             _ => unimplemented!(),
         };
 
