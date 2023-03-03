@@ -71,9 +71,12 @@ pub enum TokenType {
     RegisterSP,
 
     //Values
-    HexValue,
-    DecimalValue,
-    BinaryValue,
+    HexValueByte,
+    HexValueWord,
+    DecimalValueByte,
+    DecimalValueWord,
+    BinaryValueByte,
+    BinaryValueWord,
     Identifier,
 
     //ControlSymbols
@@ -223,31 +226,6 @@ impl Lexer {
         }
     }
 
-    pub fn tokenize(&mut self) -> Vec<Token> {
-        let mut result = vec![];
-
-        while !self.reached_end() {
-            self.consume_whitespace();
-            let character = self.peek();
-
-            let token = match character.to_ascii_lowercase() {
-                b'"' => self.scan_string(),
-                b'%' => self.scan_binary_number(),
-                b'$' => self.scan_hexnumber(),
-                b'_' | b'A'..=b'Z' | b'a'..=b'z' => self.scan_identifier(),
-                b'.' => self.scan_macro(),
-                b'0'..=b'9' => self.scan_number(),
-                _ => self.scan_operator(),
-            };
-
-            result.push(token);
-        }
-
-        result.push(self.end_of_file_token());
-
-        result
-    }
-
     fn scan_macro(&mut self) -> Token {
         self.advance(); // Consume the dot symbol
         let start = self.position;
@@ -322,8 +300,16 @@ impl Lexer {
             self.advance();
         }
 
+        let length = self.position - start;
+
+        let token = match length {
+            8 => TokenType::BinaryValueByte,
+            16 => TokenType::BinaryValueWord,
+            _ => todo!(),
+        };
+
         Token {
-            token: TokenType::BinaryValue,
+            token,
             position: TokenPosition::new(start, self.position, self.line),
         }
     }
@@ -334,8 +320,16 @@ impl Lexer {
             self.advance();
         }
 
+        let length = self.position - start;
+
+        let token = match length {
+            3 => TokenType::DecimalValueByte,
+            5 => TokenType::DecimalValueWord,
+            _ => todo!(),
+        };
+
         Token {
-            token: TokenType::DecimalValue,
+            token,
             position: TokenPosition::new(start, self.position, self.line),
         }
     }
@@ -355,8 +349,16 @@ impl Lexer {
             self.advance()
         }
 
+        let length = self.position - start;
+
+        let token = match length {
+            2 => TokenType::HexValueByte,
+            4 => TokenType::HexValueWord,
+            _ => todo!(),
+        };
+
         Token {
-            token: TokenType::HexValue,
+            token,
             position: TokenPosition::new(start, self.position, self.line),
         }
     }
@@ -385,6 +387,29 @@ impl Lexer {
     }
 }
 
+impl Iterator for Lexer {
+    type Item = Token;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while !self.reached_end() {
+            self.consume_whitespace();
+            let character = self.peek();
+
+            match character.to_ascii_lowercase() {
+                b'"' => return Some(self.scan_string()),
+                b'%' => return Some(self.scan_binary_number()),
+                b'$' => return Some(self.scan_hexnumber()),
+                b'_' | b'A'..=b'Z' | b'a'..=b'z' => return Some(self.scan_identifier()),
+                b'.' => return Some(self.scan_macro()),
+                b'0'..=b'9' => return Some(self.scan_number()),
+                _ => return Some(self.scan_operator()),
+            }
+        }
+
+        None
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -404,7 +429,7 @@ mod test {
     #[should_panic]
     fn test_lexer_invalid_string() {
         let source = "\"hello, world!";
-        let result = Lexer::new(source).tokenize();
+        let result: Vec<Token> = Lexer::new(source).collect();
     }
 
     #[test]
@@ -419,10 +444,10 @@ mod test {
                 "(some_identifier)",
                 1,
             ),
-            expected_token(TokenType::EOF, "(some_identifier)", "(some_identifier)", 1),
+            //expected_token(TokenType::EOF, "(some_identifier)", "(some_identifier)", 1),
         ];
 
-        let result = Lexer::new(source).tokenize();
+        let result: Vec<Token> = Lexer::new(source).collect();
         assert_eq!(result[..], expected[..]);
     }
 
@@ -432,10 +457,10 @@ mod test {
 
         let expected = vec![
             expected_token(TokenType::String, "\"", "\"hello, world!\"", 1),
-            expected_token(TokenType::EOF, "\"hello, world!\"", "\"hello, world!\"", 1),
+            //expected_token(TokenType::EOF, "\"hello, world!\"", "\"hello, world!\"", 1),
         ];
 
-        let result = Lexer::new(source).tokenize();
+        let result: Vec<Token> = Lexer::new(source).collect();
         assert_eq!(result[..], expected[..]);
     }
     #[test]
@@ -444,10 +469,10 @@ mod test {
 
         let expected = vec![
             expected_token(TokenType::Identifier, "", "symbol", 1),
-            expected_token(TokenType::EOF, "symbol", "symbol", 1),
+            //expected_token(TokenType::EOF, "symbol", "symbol", 1),
         ];
 
-        let result = Lexer::new(source).tokenize();
+        let result: Vec<Token> = Lexer::new(source).collect();
         assert_eq!(result[..], expected[..]);
     }
 
@@ -456,11 +481,11 @@ mod test {
         let source = "255";
 
         let expected = vec![
-            expected_token(TokenType::DecimalValue, "", "255", 1),
-            expected_token(TokenType::EOF, "255", "255", 1),
+            expected_token(TokenType::DecimalValueByte, "", "255", 1),
+            //expected_token(TokenType::EOF, "255", "255", 1),
         ];
 
-        let result = Lexer::new(source).tokenize();
+        let result: Vec<Token> = Lexer::new(source).collect();
         assert_eq!(result[..], expected[..]);
     }
 
@@ -469,11 +494,11 @@ mod test {
         let source = "%01011101";
 
         let expected = vec![
-            expected_token(TokenType::BinaryValue, "%", "%01011101", 1),
-            expected_token(TokenType::EOF, "%01011101", "%01011101", 1),
+            expected_token(TokenType::BinaryValueByte, "%", "%01011101", 1),
+            //expected_token(TokenType::EOF, "%01011101", "%01011101", 1),
         ];
 
-        let result = Lexer::new(source).tokenize();
+        let result: Vec<Token> = Lexer::new(source).collect();
         assert_eq!(result[..], expected[..]);
     }
 
@@ -486,10 +511,10 @@ mod test {
             expected_token(TokenType::NegativeFlag, "zf ", "zf nf", 1),
             expected_token(TokenType::CarryFlag, "zf nf ", "zf nf cf", 1),
             expected_token(TokenType::HalfCarryFlag, "zf nf cf ", "zf nf cf hf", 1),
-            expected_token(TokenType::EOF, "zf nf cf hf", "zf nf cf hf", 1),
+            //expected_token(TokenType::EOF, "zf nf cf hf", "zf nf cf hf", 1),
         ];
 
-        let result = Lexer::new(source).tokenize();
+        let result: Vec<Token> = Lexer::new(source).collect();
         assert_eq!(result[..], expected[..])
     }
     #[test]
@@ -504,10 +529,10 @@ mod test {
             expected_token(TokenType::RegisterE, "A B C D ", "A B C D E", 1),
             expected_token(TokenType::RegisterH, "A B C D E ", "A B C D E H", 1),
             expected_token(TokenType::RegisterL, "A B C D E H ", "A B C D E H L", 1),
-            expected_token(TokenType::EOF, "A B C D E H L", "A B C D E H L", 1),
+            //expected_token(TokenType::EOF, "A B C D E H L", "A B C D E H L", 1),
         ];
 
-        let result = Lexer::new(source).tokenize();
+        let result: Vec<Token> = Lexer::new(source).collect();
         assert_eq!(result[..], expected[..]);
     }
 
@@ -520,10 +545,10 @@ mod test {
             expected_token(TokenType::RegisterDE, "AF BC ", "AF BC DE", 1),
             expected_token(TokenType::RegisterHL, "AF BC DE ", "AF BC DE HL", 1),
             expected_token(TokenType::RegisterSP, "AF BC DE HL ", "AF BC DE HL SP", 1),
-            expected_token(TokenType::EOF, "AF BC DE HL SP", "AF BC DE HL SP", 1),
+            //expected_token(TokenType::EOF, "AF BC DE HL SP", "AF BC DE HL SP", 1),
         ];
 
-        let result = Lexer::new(source).tokenize();
+        let result: Vec<Token> = Lexer::new(source).collect();
         assert_eq!(&result[..], &expected[..]);
     }
     #[test]
@@ -537,11 +562,11 @@ mod test {
             expected_token(TokenType::RegisterB, "ld ", "ld B", 1),
             expected_token(TokenType::Comma, "ld B", "ld B,", 1),
             expected_token(TokenType::PoundSign, "ld B, ", "ld B, #", 1),
-            expected_token(TokenType::HexValue, "ld B, #$", "ld B, #$FF", 1),
-            expected_token(TokenType::EOF, "ld B, #$FF", "ld B, #$FF", 1),
+            expected_token(TokenType::HexValueByte, "ld B, #$", "ld B, #$FF", 1),
+            //expected_token(TokenType::EOF, "ld B, #$FF", "ld B, #$FF", 1),
         ];
 
-        let result = Lexer::new(&source).tokenize();
+        let result: Vec<Token> = Lexer::new(&source).collect();
         //let result_b = Lexer::new(&source_b).tokenize();
         //let result_c = Lexer::new(&source_c).tokenize();
 
@@ -560,7 +585,12 @@ mod test {
             expected_token(TokenType::RegisterA, "main: ld ", "main: ld A", 1),
             expected_token(TokenType::Comma, "main: ld A", "main: ld A,", 1),
             expected_token(TokenType::PoundSign, "main: ld A, ", "main: ld A, #", 1),
-            expected_token(TokenType::HexValue, "main: ld A, #$", "main: ld A, #$02", 1),
+            expected_token(
+                TokenType::HexValueByte,
+                "main: ld A, #$",
+                "main: ld A, #$02",
+                1,
+            ),
             expected_token(
                 TokenType::Identifier,
                 "main: ld A, #$02\n",
@@ -575,53 +605,56 @@ mod test {
             ),
             expected_token(
                 TokenType::Dec,
-                "main: ld A, #$02\nloop:",
-                "main: ld A, #$02\nloop:dec",
-                2,
+                "main: ld A, #$02\nloop:\n",
+                "main: ld A, #$02\nloop:\ndec",
+                3,
             ),
             expected_token(
                 TokenType::RegisterA,
-                "main: ld A, #$02\nloop:dec ",
-                "main: ld A, #$02\nloop:dec A",
-                2,
+                "main: ld A, #$02\nloop:\ndec ",
+                "main: ld A, #$02\nloop:\ndec A",
+                3,
             ),
             expected_token(
                 TokenType::Jr,
-                "main: ld A, #$02\nloop:dec A\n",
-                "main: ld A, #$02\nloop:dec A\njr",
-                3,
-            ),
-            expected_token(
-                TokenType::ZeroFlag,
-                "main: ld A, #$02\nloop:dec A\njr ",
-                "main: ld A, #$02\nloop:dec A\njr zf",
-                3,
-            ),
-            expected_token(
-                TokenType::Comma,
-                "main: ld A, #$02\nloop:dec A\njr zf",
-                "main: ld A, #$02\nloop:dec A\njr zf,",
-                3,
-            ),
-            expected_token(
-                TokenType::HexValue,
-                "main: ld A, #$02\nloop:dec A\njr zf,$",
-                "main: ld A, #$02\nloop:dec A\njr zf,$FE",
-                3,
-            ),
-            expected_token(
-                TokenType::Halt,
-                "main: ld A, #$02\nloop:dec A\njr zf,$FE\n",
-                "main: ld A, #$02\nloop:dec A\njr zf,$FE\nhalt",
+                "main: ld A, #$02\nloop:\ndec A\n",
+                "main: ld A, #$02\nloop:\ndec A\njr",
                 4,
             ),
             expected_token(
+                TokenType::ZeroFlag,
+                "main: ld A, #$02\nloop:\ndec A\njr ",
+                "main: ld A, #$02\nloop:\ndec A\njr zf",
+                4,
+            ),
+            expected_token(
+                TokenType::Comma,
+                "main: ld A, #$02\nloop:\ndec A\njr zf",
+                "main: ld A, #$02\nloop:\ndec A\njr zf,",
+                4,
+            ),
+            expected_token(
+                TokenType::HexValueByte,
+                "main: ld A, #$02\nloop:\ndec A\njr zf,$",
+                "main: ld A, #$02\nloop:\ndec A\njr zf,$FE",
+                4,
+            ),
+            expected_token(
+                TokenType::Halt,
+                "main: ld A, #$02\nloop:\ndec A\njr zf,$FE\n",
+                "main: ld A, #$02\nloop:\ndec A\njr zf,$FE\nhalt",
+                5,
+            ),
+            /*expected_token(
                 TokenType::EOF,
                 "main: ld A, #$02\nloop:dec A\njr zf,$FE\nhalt",
                 "main: ld A, #$02\nloop:dec A\njr zf,$FE\nhalt",
                 4,
-            ),
+            ),*/
         ];
+
+        let result: Vec<Token> = Lexer::new(source).collect();
+        assert_eq!(result[..], expected[..]);
     }
 
     #[test]
@@ -637,7 +670,7 @@ mod test {
                 1,
             ),
             expected_token(
-                TokenType::HexValue,
+                TokenType::HexValueByte,
                 "byte_array .dba $",
                 "byte_array .dba $FF",
                 1,
@@ -649,20 +682,20 @@ mod test {
                 1,
             ),
             expected_token(
-                TokenType::HexValue,
+                TokenType::HexValueByte,
                 "byte_array .dba $FF,$",
                 "byte_array .dba $FF,$FF",
                 1,
             ),
-            expected_token(
+            /*expected_token(
                 TokenType::EOF,
                 "byte_array .dba $FF,$FF",
                 "byte_array .dba $FF,$FF",
                 1,
-            ),
+            ),*/
         ];
 
-        let result = Lexer::new(&source).tokenize();
+        let result: Vec<Token> = Lexer::new(&source).collect();
         assert_eq!(result[..], expected[..]);
     }
 
@@ -672,10 +705,10 @@ mod test {
         let expected = vec![
             expected_token(TokenType::Identifier, "", "some_label", 1),
             expected_token(TokenType::Colon, "some_label", "some_label:", 1),
-            expected_token(TokenType::EOF, "some_label:", "some_label:", 1),
+            //expected_token(TokenType::EOF, "some_label:", "some_label:", 1),
         ];
 
-        let result = Lexer::new(&source).tokenize();
+        let result: Vec<Token> = Lexer::new(&source).collect();
 
         assert_eq!(result[..], expected[..]);
     }
