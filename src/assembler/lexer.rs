@@ -47,9 +47,12 @@ pub enum TokenType {
     ZeroFlag,
     NegativeFlag,
     CarryFlag,
-    HalfCarryFlag,
+    HalfCarryFlag, //TODO: this should be removed you cannot act on halfcarry flag changes ?
 
     //Value Definitions
+    MacroRenameRegister,
+    MacroDefineFunctionStart,
+    MacroDefineFunctionEnd,
     MacroDefineByte,
     MacroDefineWord,
     MacroDefineDWord,
@@ -117,6 +120,8 @@ impl From<&str> for TokenType {
             "ei" => TokenType::Ei,
             "di" => TokenType::Di,
 
+            "fun" => TokenType::MacroDefineFunctionStart,
+            "end" => TokenType::MacroDefineFunctionEnd,
             "db" => TokenType::MacroDefineByte,
             "dw" => TokenType::MacroDefineWord,
             "dd" => TokenType::MacroDefineDWord,
@@ -147,6 +152,15 @@ impl From<&str> for TokenType {
             _ => TokenType::Identifier,
         }
     }
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Eq, Copy, Clone)]
+enum TokenCategory {
+    Macro,
+    Keyword,
+    Register,
+    Flag,
+    Identifier,
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Eq, Copy, Clone)]
@@ -201,6 +215,10 @@ impl Lexer {
         self.position >= self.length
     }
     fn advance(&mut self) {
+        if self.reached_end() {
+            return;
+        }
+
         if self.peek() == b'\n' {
             self.line += 1;
             self.line_start = self.position + 1;
@@ -230,7 +248,7 @@ impl Lexer {
         self.advance(); // Consume the dot symbol
         let start = self.position;
 
-        while !self.reached_end() && self.peek().is_ascii_alphanumeric() || self.peek() == b'_' {
+        while !self.reached_end() && (self.peek().is_ascii_alphanumeric() || self.peek() == b'_') {
             self.advance()
         }
 
@@ -279,6 +297,7 @@ impl Lexer {
         }
 
         let identifier = &self.source[start..self.position];
+        dbg!(identifier);
 
         Token {
             token: TokenType::from(identifier),
@@ -393,6 +412,11 @@ impl Iterator for Lexer {
     fn next(&mut self) -> Option<Self::Item> {
         while !self.reached_end() {
             self.consume_whitespace();
+
+            if self.reached_end() {
+                break;
+            }
+
             let character = self.peek();
 
             match character.to_ascii_lowercase() {

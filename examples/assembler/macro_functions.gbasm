@@ -1,0 +1,13 @@
+.fun countdown(a: counter)
+compute:
+dec counter
+jr zf, done 
+jmp compute
+done:
+.end
+
+
+_start:
+ld a, 100
+call countdown
+

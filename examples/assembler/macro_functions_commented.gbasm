@@ -1,0 +1,38 @@
+;Example of a macro function definition with register renaming.
+;I hope to have this working soonish
+
+;; Count down until the given value reaches zero
+;;   a -> The starting counter (renamed to counter) 
+.fun count_down(a: counter) ; you can have multiple register renamings by seperating them with commas
+compute:
+  dec counter
+  jr z, done 
+  jmp compute
+done:
+.end ;This ends the .fun scope all register renamings are invalid after this point.
+
+
+_start:
+  ld a, 100
+  call count_down
+
+values:
+  .db 1,2,3,4,5,6
+  
+; Assembly Syntax Tree
+;   macros: Some(Macro::DefineBytes(vec![1, 2, 3, 4, 5, 6])), 
+;   functions: Some(vec![
+;     Function(count_down, Some(vec![RenameByteReg(RegByte::A, "counter")]), vec![
+;         Command::Lable(Identifier("compute")),
+;         Command::Dec(Identifier("counter")),
+;         Command::Jr(Unconditional, Identifier("done")),
+;         Command::Jmp(Unconditional, Identifier("compute")),
+;         Command::Lable(Identifier("done")),
+;         Command::Ret(Unconditional),
+;       ])
+;   ])
+;   assembly: Some(vec![
+;     Command::Lable("_start"),
+;     Command::Ld(RegisterA, ImmediateValueByte(100)),
+;     Command::Call(Unconditional, Identifier("count_down")),
+;   ])
