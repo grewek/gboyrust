@@ -129,17 +129,30 @@ struct Token {
     start: usize,
     end: usize,
 
+    line_pos: usize,
+
     tokentype: TokenType,
 }
 
 impl Token {
-    fn new(start: usize, end: usize, line: usize, tokentype: TokenType) -> Self {
+    fn generate(tokentype: TokenType, lexer: &Lexer) -> Self {
+        let line_pos = lexer.current.overflowing_sub(lexer.line_start).0;
+
         Self {
-            line,
-            start,
-            end,
+            line: lexer.line,
+            start: lexer.start,
+            end: lexer.current,
+            line_pos,
             tokentype,
         }
+    }
+
+    fn length(&self) -> usize {
+        self.end.saturating_sub(self.start)
+    }
+
+    fn range(&self) -> std::ops::Range<usize> {
+        self.start..self.end
     }
 }
 
@@ -149,25 +162,22 @@ impl Processor for StringProcessor {
         lexer.start = lexer.current;
 
         loop {
-            let next = lexer.advance();
-
-            if next.is_none() {
-                lexer.change_state(&EndOfFileProcessor);
-                return Err(LexerErrors::StringWithoutEnd);
-            }
-
-            match next.unwrap() {
-                '"' => break,
-                _ => continue,
-            }
+            match lexer.peek() {
+                None => {
+                    lexer.change_state(&EndOfFileProcessor);
+                    return Err(LexerErrors::StringWithoutEnd);
+                }
+                Some(ch) => match ch {
+                    '"' => {
+                        lexer.advance();
+                        break;
+                    }
+                    _ => lexer.advance(),
+                },
+            };
         }
 
-        lexer.push_token(Token::new(
-            lexer.start,
-            lexer.current,
-            lexer.line,
-            TokenType::String,
-        ));
+        lexer.push_token(Token::generate(TokenType::String, lexer));
         lexer.change_state(&BasicProcessor);
         Ok(ProcessorMessage::TokenAdded)
     }
@@ -177,13 +187,12 @@ struct OperatorProcessor;
 impl Processor for OperatorProcessor {
     fn process(&self, lexer: &mut Lexer) -> Result<ProcessorMessage, LexerErrors> {
         lexer.start = lexer.current;
+
         let current = lexer.advance();
 
         if current.is_none() {
             lexer.change_state(&EndOfFileProcessor);
         }
-
-        let next = lexer.peek();
 
         let tokentype = match current.unwrap() {
             ',' => TokenType::Comma,
@@ -194,20 +203,11 @@ impl Processor for OperatorProcessor {
             ':' => TokenType::Colon,
             '-' => TokenType::Minus,
             '+' => TokenType::Plus,
-            '=' if next.is_some() && next.unwrap() == '>' => {
-                lexer.advance();
-                TokenType::RenamingOperator
-            }
             '=' => TokenType::Equals,
-            _ => return Err(LexerErrors::UnknownOperator),
+            _ => return Err(LexerErrors::UnknownOperator(current.unwrap())),
         };
 
-        lexer.push_token(Token::new(
-            lexer.start,
-            lexer.current,
-            lexer.line,
-            tokentype,
-        ));
+        lexer.push_token(Token::generate(tokentype, lexer));
         lexer.change_state(&BasicProcessor);
 
         Ok(ProcessorMessage::TokenAdded)
@@ -220,27 +220,23 @@ impl Processor for BinaryNumberProcessor {
         lexer.start = lexer.current;
 
         loop {
-            let next = lexer.advance();
-
-            if next.is_none() {
-                lexer.change_state(&EndOfFileProcessor);
-                //TODO: Error Binary value without value ? (%??????)
-                break;
-            }
-
-            match next.unwrap() {
-                '0'..='1' => continue,
-                ' ' => break,
-                _ => return Err(LexerErrors::InvalidNumberLiteral), //TODO: Different Error ?
+            match lexer.peek() {
+                None => {
+                    lexer.change_state(&EndOfFileProcessor);
+                    //TODO: Error Binary value without value ? (%??????)
+                    break;
+                }
+                Some(ch) => {
+                    match ch {
+                        '0'..='1' => lexer.advance(),
+                        ' ' => break,
+                        _ => return Err(LexerErrors::InvalidNumberLiteral(ch)), //TODO: Different Error ?
+                    };
+                }
             }
         }
 
-        lexer.push_token(Token::new(
-            lexer.start,
-            lexer.current,
-            lexer.line,
-            TokenType::Number,
-        ));
+        lexer.push_token(Token::generate(TokenType::Number, lexer));
         lexer.change_state(&BasicProcessor);
         Ok(ProcessorMessage::TokenAdded)
     }
@@ -252,27 +248,23 @@ impl Processor for HexadecimalNumberProcessor {
         lexer.start = lexer.current;
 
         loop {
-            let next = lexer.advance();
-
-            if next.is_none() {
-                lexer.change_state(&EndOfFileProcessor);
-                //TODO: Error Hexadecimal marker without value  (0x??????)!
-                break;
-            }
-
-            match next.unwrap() {
-                '0'..='9' | 'a'..='f' | 'A'..='F' => continue,
-                ' ' => break,
-                _ => return Err(LexerErrors::InvalidNumberLiteral), //TODO: Different Error ?
+            match lexer.peek() {
+                None => {
+                    lexer.change_state(&EndOfFileProcessor);
+                    //TODO: Error Hexadecimal marker without value  (0x??????)!
+                    break;
+                }
+                Some(ch) => {
+                    match ch {
+                        '0'..='9' | 'a'..='f' | 'A'..='F' => lexer.advance(),
+                        ' ' => break,
+                        _ => return Err(LexerErrors::InvalidNumberLiteral(ch)), //TODO: Different Error ?
+                    };
+                }
             }
         }
 
-        lexer.push_token(Token::new(
-            lexer.start,
-            lexer.current,
-            lexer.line,
-            TokenType::Number,
-        ));
+        lexer.push_token(Token::generate(TokenType::Number, lexer));
         lexer.change_state(&BasicProcessor);
         Ok(ProcessorMessage::TokenAdded)
     }
@@ -284,30 +276,27 @@ impl Processor for DecimalNumberProcessor {
         lexer.start = lexer.current;
 
         loop {
-            let next = lexer.advance();
-
-            if next.is_none() {
-                lexer.change_state(&EndOfFileProcessor);
-                break;
-            }
-
-            match next.unwrap() {
-                'x' => {
-                    lexer.change_state(&HexadecimalNumberProcessor);
-                    return Ok(ProcessorMessage::Nop);
+            match lexer.peek() {
+                None => {
+                    lexer.change_state(&EndOfFileProcessor);
+                    break;
                 }
-                '0'..='9' => continue,
-                ' ' => break,
-                _ => return Err(LexerErrors::InvalidNumberLiteral),
+                Some(ch) => {
+                    match ch {
+                        'x' => {
+                            lexer.advance();
+                            lexer.change_state(&HexadecimalNumberProcessor);
+                            return Ok(ProcessorMessage::Nop);
+                        }
+                        '0'..='9' => lexer.advance(),
+                        ' ' => break,
+                        _ => return Err(LexerErrors::InvalidNumberLiteral(ch)),
+                    };
+                }
             }
         }
 
-        lexer.push_token(Token::new(
-            lexer.start,
-            lexer.current,
-            lexer.line,
-            TokenType::Number,
-        ));
+        lexer.push_token(Token::generate(TokenType::Number, lexer));
         lexer.change_state(&BasicProcessor);
         Ok(ProcessorMessage::TokenAdded)
     }
@@ -319,28 +308,24 @@ impl Processor for IdentifierProcessor {
         let mut result = ProcessorMessage::Nop;
         lexer.start = lexer.current - 1;
         loop {
-            let next = lexer.advance();
-
-            if next.is_none() {
-                lexer.change_state(&EndOfFileProcessor);
-                break;
-            }
-
-            match next.unwrap() {
-                '_' | 'a'..='z' | 'A'..='Z' => continue,
-                _ => break,
+            match lexer.peek() {
+                None => {
+                    lexer.change_state(&EndOfFileProcessor);
+                    break;
+                }
+                Some(ch) => {
+                    match ch {
+                        '_' | 'a'..='z' | 'A'..='Z' => lexer.advance(),
+                        _ => break,
+                    };
+                }
             }
         }
 
         if lexer.start != lexer.current {
             result = ProcessorMessage::TokenAdded;
             let tokentype = TokenType::from(lexer.slice_from_source());
-            lexer.push_token(Token::new(
-                lexer.start,
-                lexer.current,
-                lexer.line,
-                tokentype,
-            ));
+            lexer.push_token(Token::generate(tokentype, lexer));
         }
 
         lexer.change_state(&BasicProcessor);
@@ -353,12 +338,7 @@ struct EndOfFileProcessor;
 impl Processor for EndOfFileProcessor {
     fn process(&self, lexer: &mut Lexer) -> Result<ProcessorMessage, LexerErrors> {
         lexer.start = lexer.current;
-        lexer.push_token(Token::new(
-            lexer.start,
-            lexer.current,
-            lexer.line,
-            TokenType::Eof,
-        ));
+        lexer.push_token(Token::generate(TokenType::Eof, lexer));
         lexer.stop_processing();
 
         Ok(ProcessorMessage::TokenAdded)
@@ -370,20 +350,19 @@ impl Processor for BasicProcessor {
     fn process(&self, lexer: &mut Lexer) -> Result<ProcessorMessage, LexerErrors> {
         lexer.consume_whitespace();
 
-        let ch = lexer.advance();
-
-        if ch.is_none() {
-            lexer.change_state(&EndOfFileProcessor); //Return some type of EOF
-            return Ok(ProcessorMessage::Nop);
+        match lexer.advance() {
+            None => {
+                lexer.change_state(&EndOfFileProcessor); //Return some type of EOF
+                return Ok(ProcessorMessage::Nop);
+            }
+            Some(ch) => match ch {
+                '%' => lexer.change_state(&BinaryNumberProcessor),
+                '_' | 'a'..='z' | 'A'..='Z' => lexer.change_state(&IdentifierProcessor),
+                '0'..='9' => lexer.change_state(&DecimalNumberProcessor),
+                '"' => lexer.change_state(&StringProcessor),
+                _ => lexer.change_state(&OperatorProcessor),
+            },
         }
-
-        match ch.unwrap() {
-            '%' => lexer.change_state(&BinaryNumberProcessor),
-            '_' | 'a'..='z' | 'A'..='Z' => lexer.change_state(&IdentifierProcessor),
-            '0'..='9' => lexer.change_state(&DecimalNumberProcessor),
-            '"' => lexer.change_state(&StringProcessor),
-            _ => todo!(),
-        };
 
         Ok(ProcessorMessage::Nop)
     }
@@ -398,8 +377,8 @@ enum ProcessorMessage {
 #[derive(Debug)]
 enum LexerErrors {
     StringWithoutEnd,
-    InvalidNumberLiteral,
-    UnknownOperator,
+    InvalidNumberLiteral(char),
+    UnknownOperator(char),
 }
 
 impl std::fmt::Display for LexerErrors {
@@ -409,8 +388,14 @@ impl std::fmt::Display for LexerErrors {
                 f,
                 "String literal without end found. Please add a '\"' to the end of your string"
             ),
-            LexerErrors::InvalidNumberLiteral => todo!(),
-            LexerErrors::UnknownOperator => todo!(),
+            LexerErrors::InvalidNumberLiteral(ch) => {
+                write!(f, "Number literal contains illegal character '{}'", ch)
+            }
+            LexerErrors::UnknownOperator(ch) => write!(
+                f,
+                "Unknown Symbol which isn't a identifier or operator {}",
+                ch
+            ),
         }
     }
 }
@@ -424,6 +409,7 @@ struct Lexer<'a> {
     char_iter: Vec<char>,
 
     line: usize,
+    line_start: usize,
     start: usize,
     current: usize,
 
@@ -443,6 +429,7 @@ impl<'a> Lexer<'a> {
             source: source.to_string(),
             char_iter: source.chars().collect(),
             line: 1,
+            line_start: 0,
 
             start: 0,
             current: 0,
@@ -466,17 +453,8 @@ impl<'a> Lexer<'a> {
         self.ring_write_pos = (self.ring_write_pos + 1) % Self::RING_SIZE;
     }
 
-    fn peek_prev(&self) -> Option<Token> {
-        let prev_pos = ((self.ring_prev_written - 1) % Self::RING_SIZE as isize) as usize;
-        self.ring_buffer[prev_pos]
-    }
-
-    fn peek_token(&mut self) -> Option<Token> {
-        self.ring_buffer[self.ring_read_pos]
-    }
-
-    fn peek_next_token(&mut self) -> Option<Token> {
-        self.ring_buffer[(self.ring_read_pos + 1) % Self::RING_SIZE]
+    fn peek_token(&mut self) -> &Option<Token> {
+        &self.ring_buffer[self.ring_read_pos]
     }
 
     fn pop_token(&mut self) -> Option<Token> {
@@ -487,12 +465,6 @@ impl<'a> Lexer<'a> {
 
     fn consume_whitespace(&mut self) {
         while let Some(ch) = self.peek() {
-            //TODO: There are probably other utf-8 characters that lead to a newline should we handle these
-            //cases as well ?
-            if ch == '\n' {
-                self.line += 1;
-            }
-
             if ch.is_whitespace() {
                 self.advance();
             } else {
@@ -514,6 +486,11 @@ impl<'a> Lexer<'a> {
             return None;
         }
 
+        if self.peek().unwrap() == '\n' {
+            self.line += 1;
+            self.line_start = self.current;
+        }
+
         let pos = self.current;
 
         self.current += 1;
@@ -531,7 +508,13 @@ impl<'a> Lexer<'a> {
     fn report_error(&self, err: LexerErrors) {
         let stderr = std::io::stderr();
         let mut handle = stderr.lock();
-        let err_msg = format!("SCANNER:ERROR:{}: {}", self.current, err);
+        let err_msg = format!(
+            "SCANNER:ERROR on Line {}:{}:{}",
+            self.line,
+            self.current.overflowing_sub(self.start).0,
+            err
+        );
+        dbg!(&err_msg);
         handle.write_all(err_msg.as_bytes()).unwrap();
     }
 
@@ -556,6 +539,7 @@ mod test {
             start: 0,
             end: 0,
             line: 1,
+            line_pos: 0,
             tokentype: TokenType::Eof,
         };
 
@@ -566,32 +550,36 @@ mod test {
 
     #[test]
     fn scan_identifier() {
-        let source = "hello world \"Test String\"";
+        let source = "hello world\n\"Test String\"\n";
         let expected_hello = Token {
             start: "".len(),
-            end: "hello ".len(),
+            end: "hello".len(),
             line: 1,
+            line_pos: "hello".len(),
             tokentype: TokenType::Identifier,
         };
 
         let expected_world = Token {
             start: "hello ".len(),
-            end: "hello world ".len(),
+            end: "hello world".len(),
             line: 1,
+            line_pos: "hello world".len(),
             tokentype: TokenType::Identifier,
         };
 
         let expected_string = Token {
             start: "hello world \"".len(),
             end: "hello world \"Test String\"".len(),
-            line: 1,
+            line: 2,
+            line_pos: "\"Test String\" ".len(),
             tokentype: TokenType::String,
         };
 
         let expected_eof = Token {
-            start: "hello world \"Test String\"".len(),
-            end: "hello world \"Test String\"".len(),
-            line: 1,
+            start: "hello world \"Test String\"\n".len(),
+            end: "hello world \"Test String\"\n".len(),
+            line: 3,
+            line_pos: "\n".len(),
             tokentype: TokenType::Eof,
         };
 
@@ -601,8 +589,6 @@ mod test {
         assert_eq!(lexer.peek_token().unwrap(), expected_hello);
 
         lexer.scan_next_token();
-        assert_eq!(lexer.peek_prev().unwrap(), expected_hello);
-
         assert_eq!(lexer.pop_token().unwrap(), expected_hello);
         assert_eq!(lexer.peek_token().unwrap(), expected_world);
         assert_eq!(lexer.pop_token().unwrap(), expected_world);
@@ -619,29 +605,33 @@ mod test {
         let source = "1 10 100 1000 10000";
         let expected_one = Token {
             start: "1".len(),
-            end: "1 ".len(),
+            end: "1".len(),
             line: 1,
+            line_pos: "1".len(),
             tokentype: TokenType::Number,
         };
 
         let expected_ten = Token {
             start: "1 1".len(),
-            end: "1 10 ".len(),
+            end: "1 10".len(),
             line: 1,
+            line_pos: "1 10".len(),
             tokentype: TokenType::Number,
         };
 
         let expected_one_hundred = Token {
             start: "1 10 1".len(),
-            end: "1 10 100 ".len(),
+            end: "1 10 100".len(),
             line: 1,
+            line_pos: "1 10 100".len(),
             tokentype: TokenType::Number,
         };
 
         let expected_one_thousand = Token {
             start: "1 10 100 1".len(),
-            end: "1 10 100 1000 ".len(),
+            end: "1 10 100 1000".len(),
             line: 1,
+            line_pos: "1 10 100 1000".len(),
             tokentype: TokenType::Number,
         };
 
@@ -649,6 +639,7 @@ mod test {
             start: "1 10 100 1000 1".len(),
             end: "1 10 100 1000 10000".len(),
             line: 1,
+            line_pos: "1 10 100 1000 10000".len(),
             tokentype: TokenType::Number,
         };
 
@@ -656,6 +647,7 @@ mod test {
             start: "1 10 100 1000 10000".len(),
             end: "1 10 100 1000 10000".len(),
             line: 1,
+            line_pos: "1 10 100 1000 10000".len(),
             tokentype: TokenType::Eof,
         };
 
@@ -685,15 +677,17 @@ mod test {
         let source = "0x0 0xFF 0xFFAA";
         let expected_zero = Token {
             start: "0x".len(),
-            end: "0x0 ".len(),
+            end: "0x0".len(),
             line: 1,
+            line_pos: "0x0".len(),
             tokentype: TokenType::Number,
         };
 
         let expected_ff = Token {
             start: "0x0 0x".len(),
-            end: "0x0 0xFF ".len(),
+            end: "0x0 0xFF".len(),
             line: 1,
+            line_pos: "0x0 0xFF".len(),
             tokentype: TokenType::Number,
         };
 
@@ -701,6 +695,7 @@ mod test {
             start: "0x0 0xFF 0x".len(),
             end: "0x0 0xFF 0xFFAA".len(),
             line: 1,
+            line_pos: "0x0 0xFF 0xFFAA".len(),
             tokentype: TokenType::Number,
         };
 
@@ -708,6 +703,7 @@ mod test {
             start: "0x0 0xFF 0xFFAA".len(),
             end: "0x0 0xFF 0xFFAA".len(),
             line: 1,
+            line_pos: "0x0 0xFF 0xFFAA".len(),
             tokentype: TokenType::Eof,
         };
 
@@ -731,15 +727,17 @@ mod test {
         let source = "%01 %10 %11";
         let expected_one = Token {
             start: "%".len(),
-            end: "%01 ".len(),
+            end: "%01".len(),
             line: 1,
+            line_pos: "%01".len(),
             tokentype: TokenType::Number,
         };
 
         let expected_two = Token {
             start: "%01 %".len(),
-            end: "%01 %10 ".len(),
+            end: "%01 %10".len(),
             line: 1,
+            line_pos: "%01 %10".len(),
             tokentype: TokenType::Number,
         };
 
@@ -747,6 +745,7 @@ mod test {
             start: "%01 %10 %".len(),
             end: "%01 %10 %11".len(),
             line: 1,
+            line_pos: "%01 %10 %11".len(),
             tokentype: TokenType::Number,
         };
 
@@ -754,6 +753,7 @@ mod test {
             start: "%01 %10 %11".len(),
             end: "%01 %10 %11".len(),
             line: 1,
+            line_pos: "%01 %10 %11".len(),
             tokentype: TokenType::Eof,
         };
 
