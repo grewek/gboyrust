@@ -22,10 +22,6 @@ fn main() {
     let rom_path = args.nth(1).unwrap();
 
     let native_options = eframe::NativeOptions {
-        initial_window_size: Some(egui::Vec2 {
-            x: 1920.0,
-            y: 1080.0,
-        }),
         ..eframe::NativeOptions::default()
     };
     //let path = "test_roms/mooneye-tests/acceptance/bits/reg_f.gb";

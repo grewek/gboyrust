@@ -59,23 +59,23 @@ impl DebuggerView {
 
 impl eframe::App for DebuggerView {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        if ctx.input().key_pressed(egui::Key::S) {
+        if ctx.input(|i| i.key_pressed(egui::Key::S)) {
             self.debugger.step();
         }
 
-        if ctx.input().key_pressed(egui::Key::R) {
+        if ctx.input(|i| i.key_pressed(egui::Key::R)) {
             self.debugger.run();
         }
 
         if self.selected_index.is_some() {
             let offset = self.disassembly[self.selected_index.unwrap()].1.offset;
 
-            if ctx.input().key_pressed(egui::Key::B) {
+            if ctx.input(|i| i.key_pressed(egui::Key::B)) {
                 self.debugger.toggle_breakpoint(offset);
             }
         }
 
-        if ctx.input().key_pressed(egui::Key::D) {
+        if ctx.input(|i| i.key_pressed(egui::Key::D)) {
             self.debugger
                 .disassemble(&mut self.disassembly, &mut self.disassembly_map);
         }
@@ -250,7 +250,7 @@ impl eframe::App for DebuggerView {
                 .column(Column::initial(150.0))
                 .column(Column::initial(150.0))
                 .column(Column::remainder());
-            if ctx.input().key_pressed(egui::Key::Enter) && self.selected_index.is_some() {
+            if ctx.input(|i| i.key_pressed(egui::Key::Enter)) && self.selected_index.is_some() {
                 let current_op = self.disassembly[self.selected_index.unwrap()].1;
 
                 if let Some(address) = current_op.follow() {
@@ -261,13 +261,14 @@ impl eframe::App for DebuggerView {
                 }
             }
 
-            if ctx.input().key_pressed(egui::Key::Backspace) {
+            if ctx.input(|i| i.key_pressed(egui::Key::Backspace)) {
                 table = table.scroll_to_row(
                     self.disassembly_map[&(self.debugger.get_program_counter() as u16)],
                     Some(Align::Center),
                 );
             }
 
+            table = table.sense(egui::Sense::click());
             table
                 .header(20.0, |mut header| {
                     header.col(|ui| {
@@ -293,11 +294,12 @@ impl eframe::App for DebuggerView {
                         ui.heading("Src");
                     });
                 })
-                .body(|mut body| {
+                .body(|body| {
                     let row_height = 20.0;
                     let row_count = self.disassembly.len();
 
-                    body.rows(row_height, row_count, |row_index, mut row| {
+                    body.rows(row_height, row_count, |mut row| {
+                        let row_index = row.index();
                         let disassembly = &self.disassembly[row_index];
 
                         let mut col = Color32::GRAY;
@@ -339,7 +341,7 @@ impl eframe::App for DebuggerView {
                             .size(self.font_size)
                             .monospace();
 
-                        let (_, offset_response) = row.col(|ui| {
+                        row.col(|ui| {
                             ui.label(offset_label);
                         });
 
@@ -357,25 +359,20 @@ impl eframe::App for DebuggerView {
                             .color(col)
                             .size(self.font_size)
                             .monospace();
-                        let (_, dump_response) = row.col(|ui| {
+                        row.col(|ui| {
                             ui.label(hexdump_label);
                         });
-                        let (_, disasm_response) = row.col(|ui| {
+                        row.col(|ui| {
                             ui.label(disassembly_label);
                         });
-                        let (_, dest_response) = row.col(|ui| {
+                        row.col(|ui| {
                             ui.label(dest_label);
                         });
-                        let (_, src_response) = row.col(|ui| {
+                        row.col(|ui| {
                             ui.label(src_label);
                         });
 
-                        if offset_response.hovered()
-                            || dump_response.hovered()
-                            || disasm_response.hovered()
-                            || dest_response.hovered()
-                            || src_response.hovered()
-                        {
+                        if row.response().clicked() {
                             self.selected_index = Some(row_index);
                         }
                     });
